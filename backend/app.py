@@ -22,16 +22,16 @@ client = AzureOpenAI(
 )
 MODEL = "gpt-4o-mini"
 
-# Load dataset
-try:
-    df = pd.read_excel("final_granted_plus_pregarnted_v2.xlsx", engine='openpyxl')
-except Exception:
-    df = pd.read_csv("final_granted_plus_pregarnted_v2.xlsx", encoding='ISO-8859-1')
+# # Load dataset
+# try:
+#     df = pd.read_excel("final_granted_plus_pregarnted_v2.xlsx", engine='openpyxl')
+# except Exception:
+#     df = pd.read_csv("final_granted_plus_pregarnted_v2.xlsx", encoding='ISO-8859-1')
 
-required_cols = {"Title", "Abstract", "Claim", "prefName", "targetName"}
-missing_cols = required_cols - set(df.columns)
-if missing_cols:
-    raise ValueError(f"Missing required columns: {missing_cols}")
+# required_cols = {"Title", "Abstract", "Claim", "prefName", "targetName"}
+# missing_cols = required_cols - set(df.columns)
+# if missing_cols:
+#     raise ValueError(f"Missing required columns: {missing_cols}")
 
 # Flask app
 app = Flask(__name__)
@@ -68,7 +68,7 @@ CORS(app)
 @app.route("/preclinical-eval", methods=["GET"])
 def preclinical_eval():
     user_input = request.args.get("input")
-
+    df = pd.read_excel("final_granted_plus_pregarnted_v2.xlsx", engine='openpyxl')
     if not user_input:
         return jsonify({"error": "Missing input for drug or target name."}), 400
 
@@ -103,7 +103,7 @@ def preclinical_eval():
 @app.route("/predict-preclinical-success", methods=["POST"])
 def predict():
     data = request.get_json()
-
+    df = pd.read_excel("final_granted_plus_pregarnted_v2.xlsx", engine='openpyxl')
     # Input validation
     required_fields = ["drug_name", "target_name", "disease", "study", "synonym"]
     if not all(field in data for field in required_fields):
