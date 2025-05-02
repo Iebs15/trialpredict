@@ -88,41 +88,34 @@ function App() {
     }
   }
 
-  const handleDropdownSubmit = async (e) => {
+  const handleDropdownSubmit = (e) => {
     e.preventDefault()
     if (!selectedInput) return
-
+  
     setLoading(true)
     setError(null)
-
-    try {
-      const response = await fetch(`${import.meta.env.VITE_API_URL}/preclinical-eval`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          input: selected,
-        }),
-      })
-
-      if (!response.ok) {
-        const errorData = await response.json()
-        throw new Error(errorData.error || "Failed to get prediction")
-      }
-
-      const data = await response.json()
-      setResults({
-        type: "dropdown",
-        data: data.results,
-      })
-    } catch (err) {
-      console.error("Error fetching prediction:", err)
-      setError(err.message || "Failed to get prediction. Please try again.")
-    } finally {
-      setLoading(false)
+    setResults({ type: "dropdown", data: [] })
+  
+    const source = new EventSource(`${import.meta.env.VITE_API_URL}/preclinical-eval?input=${encodeURIComponent(selected)}`)
+  
+    source.onmessage = (event) => {
+      const newData = JSON.parse(event.data)
+      setResults((prev) => ({
+        ...prev,
+        data: [...prev.data, newData],
+      }))
     }
+  
+    source.onerror = (err) => {
+      console.error("SSE connection error:", err)
+      // setError("Connection lost or failed.")
+      setLoading(false)
+      source.close()
+    }
+  
+    // Optionally stop loading after some time or when enough results are received
   }
+  
 
   // Helper functions
   function getProbabilityColor(probability) {

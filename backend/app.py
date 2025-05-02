@@ -8,6 +8,8 @@ import re
 from dropdown import generate_user_prompt, get_prediction
 from user_input import generate_user_prompt_userinput, get_prediction_userinput
 from flask_cors import CORS
+from flask import Response, stream_with_context
+import json
 
 # Load environment variables
 load_dotenv()
@@ -63,10 +65,9 @@ CORS(app)
 #     return jsonify({"results": results}), 200
 
 
-@app.route("/preclinical-eval", methods=["POST"])
+@app.route("/preclinical-eval", methods=["GET"])
 def preclinical_eval():
-    data = request.json
-    user_input = data.get("input")
+    user_input = request.args.get("input")
 
     if not user_input:
         return jsonify({"error": "Missing input for drug or target name."}), 400
@@ -77,26 +78,27 @@ def preclinical_eval():
     if filtered_df.empty:
         return jsonify({"error": "No matching records found for the provided drug name or target."}), 404
 
-    results = []
-    for _, row in filtered_df.iterrows():
-        user_prompt = generate_user_prompt(row)
-        drug_name, target_name, prob, explain = get_prediction(user_prompt, row['prefName'], row['targetName'])
+    @stream_with_context
+    def generate_stream():
+        for _, row in filtered_df.iterrows():
+            user_prompt = generate_user_prompt(row)
+            drug_name, target_name, prob, explain = get_prediction(user_prompt, row['prefName'], row['targetName'])
 
-        result = {
-            "drug_name": drug_name,
-            "target_name": target_name,
-            "disease": row.get('Disease', ""),
-            "assignee_name": row.get('Assignee_Applicant', ""),
-            "pg_pubid": row['pgpub_id'] if pd.notna(row['pgpub_id']) else row.get('Display_Key', ""),
-            "inventor": row.get('Inventor', ""),
-            "publication_date": str(row.get('Publication_Date', "")),
-            "probability": prob,
-            "justification": explain
-        }
-        results.append(result)
+            result = {
+                "drug_name": drug_name,
+                "target_name": target_name,
+                "disease": row.get('Disease', ""),
+                "assignee_name": row.get('Assignee_Applicant', ""),
+                "pg_pubid": row['pgpub_id'] if pd.notna(row['pgpub_id']) else row.get('Display_Key', ""),
+                "inventor": row.get('Inventor', ""),
+                "publication_date": str(row.get('Publication_Date', "")),
+                "probability": prob,
+                "justification": explain
+            }
 
-    return jsonify({"results": results})
+            yield f"data: {json.dumps(result)}\n\n"
 
+    return Response(generate_stream(), mimetype='text/event-stream')
 
 @app.route("/predict-preclinical-success", methods=["POST"])
 def predict():
