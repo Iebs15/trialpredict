@@ -27,7 +27,7 @@ function App() {
   useEffect(() => {
     const fetchOptions = async () => {
       if (selectedInput.length >= 3) {
-        const res = await fetch(`${API_BASE_URL}/api/search-drugs?query=${selectedInput}`)
+        const res = await fetch(`${import.meta.env.VITE_API_URL}/api/search-drugs?query=${selectedInput}`)
         const data = await res.json()
         if (data?.options) {
           setOptions(data.options)
@@ -56,7 +56,7 @@ function App() {
     setError(null)
 
     try {
-      const response = await fetch(`${API_BASE_URL}/predict-preclinical-success`, {
+      const response = await fetch(`${import.meta.env.VITE_API_URL}/predict-preclinical-success`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -96,7 +96,7 @@ function App() {
     setError(null)
 
     try {
-      const response = await fetch(`${API_BASE_URL}/preclinical-eval`, {
+      const response = await fetch(`${import.meta.env.VITE_API_URL}/preclinical-eval`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
