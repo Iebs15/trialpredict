@@ -1,0 +1,50 @@
+@import "tailwindcss";
+
+
+@theme {
+  /* Define olive color shades */
+  --color-olive: rgb(107 142 35);
+  --color-olive-light: rgb(147 182 75);
+  --color-olive-dark: rgb(87 122 15);
+  --color-custom-gradient: linear-gradient(36.59deg, #A6CE39 2.62%, #40530C 92.34%);
+  --color-gradient-alt-ego: linear-gradient(36.59deg, #40530C 2.62%, #A6CE39 92.34%);
+  --color-custom-gradient-image: url('@/assets/bg.png');
+
+  /* Theme colors */
+  --color-background: white;
+  --color-foreground: rgb(20 20 20);
+
+  /* --color-neutral: rgb(192, 192, 192); */
+
+  --color-card: white;
+  --color-card-foreground: rgb(20 20 20);
+
+  --color-popover: white;
+  --color-popover-foreground: rgb(20 20 20);
+
+  --color-primary: var(--color-olive);
+  --color-primary-foreground: white;
+
+  --color-secondary: rgb(240 240 245);
+  --color-secondary-foreground: rgb(30 30 30);
+
+  --color-muted: rgb(240 240 245);
+  --color-muted-foreground: rgb(120 120 130);
+
+  --color-accent: rgb(240 240 245);
+  --color-accent-foreground: rgb(30 30 30);
+
+  --color-destructive: rgb(220 40 40);
+  --color-destructive-foreground: white;
+
+  --color-border: rgb(230 230 235);
+  --color-input: rgb(230 230 235);
+  --color-ring: var(--color-olive);
+
+  --radius: 0.5rem;
+}
+
+
+
+
+/*  */

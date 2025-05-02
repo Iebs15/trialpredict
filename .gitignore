@@ -1,0 +1,11 @@
+# Ignore all .pkl files
+
+# Ignore all .env files
+*.env
+
+# Ignore __pycache__ directories
+__pycache__/
+
+## Ignore the file 
+
+backend/PP/player_data.csv
