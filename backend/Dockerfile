@@ -17,11 +17,11 @@ RUN pip install gunicorn gevent
 COPY . .
 
 # Make port 5000 available to the world outside this container
-EXPOSE 6000
+EXPOSE 8000
 
 # Define environment variable
 ENV FLASK_APP=app_prod.py
 
 # Use Gunicorn as the WSGI server for a production environment
-CMD ["gunicorn", "-w", "4", "-k", "gevent", "-b", "0.0.0.0:5000", "--timeout", "3000", "--max-requests", "1000", "--max-requests-jitter", "50", "--limit-request-line", "4094", "app:app"]
+CMD ["gunicorn", "-w", "4", "-k", "gevent", "-b", "0.0.0.0:8000", "--timeout", "3000", "--max-requests", "1000", "--max-requests-jitter", "50", "--limit-request-line", "4094", "app:app"]
 

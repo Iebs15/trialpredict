@@ -13,7 +13,7 @@ services:
     build:
       context: ./backend
     ports:
-      - "6000:6000"
+      - "8000:8000"
     environment:
       - FLASK_ENV=development
     volumes:
