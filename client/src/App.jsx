@@ -1215,25 +1215,11 @@ function App() {
                 <div className="space-y-4">
                   <div className="flex justify-between items-center">
                     <h3 className="text-lg font-bold">Prediction Results</h3>
-                    <div className="flex items-center">
-                      <span
-                        className="font-bold text-lg mr-2"
-                        style={{
-                          color: getProbabilityColor(results.data.probability),
-                        }}
-                      >
-                        {results.data.probability}%
-                      </span>
+                    {/* <div className="flex items-center">
                       <div className="w-24 h-2 bg-gray-200 rounded-full overflow-hidden">
-                        <div
-                          className="h-full rounded-full"
-                          style={{
-                            width: `${results.data.probability}%`,
-                            backgroundColor: getProbabilityColor(results.data.probability),
-                          }}
-                        ></div>
+                        
                       </div>
-                    </div>
+                    </div> */}
                   </div>
 
                   <div className="bg-gray-50 p-4 rounded-md font-mono text-sm">
@@ -1242,9 +1228,9 @@ function App() {
                         Results for {results.data.drug_name} targeting {results.data.target_name}
                       </strong>
                     </p>
-                    <p>
+                    {/* <p>
                       <strong>Probability</strong>: {results.data.probability}%
-                    </p>
+                    </p> */}
                     <p>
                       <strong>Justification</strong>: {results.data.justification}
                     </p>
@@ -1298,25 +1284,6 @@ function App() {
                             <AlertCircle className="ml-2 h-5 w-5 text-amber-500" />
                           ) : null}
                         </CardTitle>
-                        <div className="flex items-center">
-                          <span
-                            className="font-bold text-lg mr-2"
-                            style={{
-                              color: getProbabilityColor(result.probability),
-                            }}
-                          >
-                            {result.probability}%
-                          </span>
-                          <div className="w-24 h-2 bg-gray-200 rounded-full overflow-hidden">
-                            <div
-                              className="h-full rounded-full"
-                              style={{
-                                width: `${result.probability}%`,
-                                backgroundColor: getProbabilityColor(result.probability),
-                              }}
-                            ></div>
-                          </div>
-                        </div>
                       </div>
                     </CardHeader>
                     <CardContent>
