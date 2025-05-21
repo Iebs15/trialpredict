@@ -166,6 +166,8 @@ from dropdown import generate_user_prompt, get_prediction, generate_system_promp
 from flask_cors import CORS
 from flask import Response, stream_with_context
 import json
+from biomarker_landscape import build_hetero_knowledge_graph,map_target_name_to_id,predict_diseases_for_target
+from disease_landscape import generate_biomarker_association_matrix_by_name
  
 # Load environment variables
 load_dotenv()
@@ -380,6 +382,38 @@ def get_disease():
     except Exception as e:
         # logger.exception(f"Error processing disease search: {str(e)}")
         return jsonify({"error": str(e)}), 500
+    
+
+
+#Biomarker Landscape
+
+df = pd.read_excel(r"backend\Open_target_data.xlsx")
+G = build_hetero_knowledge_graph(df)
+name_to_id = map_target_name_to_id(df)
+
+@app.route("/biomarker_landscape", methods=["GET"])
+def predict_diseases():
+    target_name = request.args.get("targetName")
+    if not target_name:
+        return jsonify({"error": "Missing target name"}), 400
+
+    target_id = name_to_id.get(target_name.lower())
+    if not target_id:
+        return jsonify({"error": f"Target '{target_name}' not found"}), 404
+
+    predictions = predict_diseases_for_target(G, target_id, top_k=10)
+    print(predictions)
+    return jsonify(predictions)
+
+
+@app.route("/disease_landscape", methods=["GET"])
+def disease_association():
+    disease_name= request.args.get("disease")
+    if not disease_name:
+        return jsonify({"error": "Missing 'disease' query parameter"}), 400
+    
+    matrix = generate_biomarker_association_matrix_by_name(df, disease_name)
+    return jsonify(matrix)
    
    
 # Run the app
