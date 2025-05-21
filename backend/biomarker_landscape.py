@@ -136,31 +136,31 @@ def interactive_plot_graph(G, output_html="knowledge_graph.html", max_nodes=200)
 
 # --- 5. Run the Pipeline ---
 
-# Step 1: Load data
-df = pd.read_excel(r"C:\Users\nirmiti.deshmukh\trialpredict\backend\Open_target_data.xlsx")  # Update this path if needed
+# # Step 1: Load data
+# df = pd.read_excel(r"C:\Users\nirmiti.deshmukh\trialpredict\backend\Open_target_data.xlsx")  # Update this path if needed
 
-# Step 2: Build graph
-G = build_hetero_knowledge_graph(df)
+# # Step 2: Build graph
+# G = build_hetero_knowledge_graph(df)
 
-# Step 3: Map target name to ID
-name_to_id = map_target_name_to_id(df)
+# # Step 3: Map target name to ID
+# name_to_id = map_target_name_to_id(df)
 
-# Print available targets
-print("\nAvailable target names (sample):")
-for tname in list(name_to_id.keys())[:20]:
-    print(f"- {tname}")
+# # Print available targets
+# print("\nAvailable target names (sample):")
+# for tname in list(name_to_id.keys())[:20]:
+#     print(f"- {tname}")
 
-# Step 4: Input and predict
-target_name_input = "GABA-A receptor; anion channel"
-target_id = name_to_id.get(target_name_input.lower())
+# # Step 4: Input and predict
+# target_name_input = "GABA-A receptor; anion channel"
+# target_id = name_to_id.get(target_name_input.lower())
 
-if target_id:
-    predictions = predict_diseases_for_target(G, target_id, top_k=10)
-    print(f"\nPredicted Diseases for Target '{target_name_input}'\n" + "-"*40)
-    for p in predictions:
-        print(f"{p['disease_name']} (Score: {p['score']}) - Linked Drugs: {p['linked_drugs']}")
-else:
-    print(f"\n❌ Target name '{target_name_input}' not found. Try checking the name or spelling.")
+# if target_id:
+#     predictions = predict_diseases_for_target(G, target_id, top_k=10)
+#     print(f"\nPredicted Diseases for Target '{target_name_input}'\n" + "-"*40)
+#     for p in predictions:
+#         print(f"{p['disease_name']} (Score: {p['score']}) - Linked Drugs: {p['linked_drugs']}")
+# else:
+#     print(f"\n❌ Target name '{target_name_input}' not found. Try checking the name or spelling.")
 
-# Step 5: Show interactive graph
-interactive_plot_graph(G, output_html="knowledge_graph.html")
+# # Step 5: Show interactive graph
+# interactive_plot_graph(G, output_html="knowledge_graph.html")
