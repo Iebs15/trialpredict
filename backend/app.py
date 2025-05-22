@@ -168,6 +168,8 @@ from flask import Response, stream_with_context
 import json
 from biomarker_landscape import build_hetero_knowledge_graph,map_target_name_to_id,predict_diseases_for_target
 from disease_landscape import generate_biomarker_association_matrix_by_name
+from dropdown import get_preclinical_study_results_by_disease_and_target
+from pkpd import search_disease_info
  
 # Load environment variables
 load_dotenv()
@@ -414,6 +416,31 @@ def disease_association():
     
     matrix = generate_biomarker_association_matrix_by_name(df, disease_name)
     return jsonify(matrix)
+
+
+##search disease--> target --> papers output similar to prev one. 
+@app.route("/clinical-trial-journey", methods=["GET"])
+def clinical_trial_journey():
+    disease = request.args.get("disease")
+    if not disease:
+        return jsonify({"error": "Missing 'disease' query parameter"}), 400
+
+    result = get_preclinical_study_results_by_disease_and_target(disease)
+    return jsonify(result)
+
+    
+##PKPD step 3
+@app.route("/pkpd-data", methods=["GET"])
+def pkpd_data():
+    disease = request.args.get("disease")
+    if not disease:
+        return jsonify({"error": "Missing 'disease' query parameter"}), 400
+
+    results = search_disease_info(disease)
+    if isinstance(results, str):
+        return jsonify({"message": results})
+    
+    return jsonify(results)
    
    
 # Run the app
