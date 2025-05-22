@@ -161,7 +161,7 @@ import pandas as pd
 from dotenv import load_dotenv
 import re
 # from phase_2_user import generate_user_prompt, get_prediction
-from dropdown import generate_user_prompt, get_prediction, generate_system_prompt
+from dropdown import generate_user_prompt, get_prediction
 # from user_input import generate_user_prompt_userinput, get_prediction_userinput
 from flask_cors import CORS
 from flask import Response, stream_with_context
@@ -387,7 +387,7 @@ def get_disease():
 
 #Biomarker Landscape
 
-df = pd.read_excel(r"backend\Open_target_data.xlsx")
+df = pd.read_excel("Open_target_data.xlsx")
 G = build_hetero_knowledge_graph(df)
 name_to_id = map_target_name_to_id(df)
 
@@ -418,4 +418,4 @@ def disease_association():
    
 # Run the app
 if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=8000)
+    app.run(debug=True)
