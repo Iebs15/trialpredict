@@ -16,5 +16,5 @@ services:
       - "8000:8000"
     environment:
       - FLASK_ENV=development
-    volumes:
-      - ./backend:/app
+    # volumes:
+    #   - ./backend:/app
