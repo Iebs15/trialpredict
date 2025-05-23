@@ -17,18 +17,18 @@ export default function Home() {
                   Discover Biomarker-Disease Relationships
                 </h1>
                 <p className="max-w-[600px] text-muted-foreground md:text-xl">
-                  TrialPredict helps researchers and clinicians understand biomarker associations, predict clinical
-                  outcomes, and explore treatment options with evidence-based insights.
+                TrialPredict empowers researchers and clinicians with a unified platform to decode biomarker–disease–drug relationships, predict clinical outcomes, and make evidence-based treatment decisions.
+                Explore dynamic landscapes of biomarkers, diseases, pharmacokinetics/pharmacodynamics (PK/PD), and clinical trials — all backed by data-driven insights.
                 </p>
               </div>
               <div className="flex flex-col gap-2 min-[400px]:flex-row">
-                <Button size="lg" className="bg-teal-600 hover:bg-teal-700">
+                {/* <Button size="lg" className="bg-teal-600 hover:bg-teal-700">
                   Get Started
                   <ArrowRight className="ml-2 h-4 w-4" />
                 </Button>
                 <Button size="lg" variant="outline">
                   Learn More
-                </Button>
+                </Button> */}
               </div>
             </div>
 

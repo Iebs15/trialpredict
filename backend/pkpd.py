@@ -17,7 +17,7 @@ es = Elasticsearch(
 )
 
  
-INDEX_NAME = "op_123456"
+INDEX_NAME = "op_arif_1"
  
 def search_disease_info(disease_name):
     query = {
@@ -32,7 +32,7 @@ def search_disease_info(disease_name):
     }
  
     try:
-        response = es.search(index=INDEX_NAME, body=query, size=5)
+        response = es.search(index=INDEX_NAME, body=query, size=500)
     except NotFoundError:
         return f"Index '{INDEX_NAME}' not found."
     except Exception as e:
@@ -81,7 +81,7 @@ if __name__ == "__main__":
     if isinstance(info, str):
         print(info)
     else:
-        for idx, record in enumerate(info, 1):
+        for idx, record in enumerate(info, 500):
             print(f"\nRecord {idx}:")
             print(f"Disease: {record['Disease_name']}")
             print(f"Description: {record['Description']}\n")

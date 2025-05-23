@@ -90,7 +90,7 @@ except Exception:
  
  
 # Preprocessing
-df['Disease'] = df['Disease'].fillna('').astype(str)
+df['Disease Name'] = df['Disease Name'].fillna('').astype(str)
 df['targetName'] = df['targetName'].fillna('').astype(str)
 df['Publication_Date'] = pd.to_datetime(df['Publication_Date'], errors='coerce')
 df['pgpub_id'] = df['pgpub_id'].fillna(df['Display_Key'])
@@ -98,7 +98,7 @@ df['pgpub_id'] = df['pgpub_id'].fillna(df['Display_Key'])
 def get_preclinical_study_results_by_disease_and_target(disease_input, target_input):
     # Filter by disease and target
     filtered_df = df[
-        (df['Disease'].str.lower() == disease_input.lower()) &
+        (df['Disease Name'].str.lower() == disease_input.lower()) &
         (df['targetName'].str.lower() == target_input.lower())
     ]
 
@@ -115,21 +115,22 @@ def get_preclinical_study_results_by_disease_and_target(disease_input, target_in
         result = {
             "drug_name": row['prefName'],
             "target_name": row['targetName'],
-            "disease": row['Disease'],
+            "disease": row['Disease Name'],
             "title": row['Title'],
             "assignee_name": row['Assignee_Applicant'],
             "pg_pubid": row['pgpub_id'],
             "inventor": row['Inventor'],
             "publication_date": row['Publication_Date'].date() if pd.notna(row['Publication_Date']) else None,
-            "justification": row['Justification'],
-            "biomarker_association": row['Disease_Target_Explanation']
+            "justification": row['justification'],
+            "biomarker_association": row['Disease_Target_Explanation'],
+            "Source": row['url']
         }
 
         yield result
 
 if __name__ == "__main__":
     # Show diseases
-    diseases = sorted(df['Disease'].unique())
+    diseases = sorted(df['Disease Name'].unique())
     print("\nAvailable Diseases:")
     for idx, disease in enumerate(diseases):
         print(f"{idx + 1}. {disease}")
@@ -138,7 +139,7 @@ if __name__ == "__main__":
     selected_disease = diseases[disease_index]
 
     # Show targets for selected disease
-    targets = sorted(df[df['Disease'] == selected_disease]['targetName'].unique())
+    targets = sorted(df[df['Disease Name'] == selected_disease]['targetName'].unique())
     print(f"\nAvailable Targets for '{selected_disease}':")
     for idx, target in enumerate(targets):
         print(f"{idx + 1}. {target}")

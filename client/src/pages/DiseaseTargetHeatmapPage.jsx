@@ -4,15 +4,17 @@ import { useLocation } from "react-router-dom";
 
 const DiseaseTargetHeatmapPage = () => {
     const location = useLocation();
-    const { diseaseName, targets } = location.state || {};
+    const {diseaseID, diseaseName, targets } = location.state || {};
 
     if ( !diseaseName || !targets) return <div>Invalid access</div>;
 
     // Construct the data object expected by the DiseaseTargetHeatmap component
     const diseaseData = {
+        diseaseID,
         diseaseName,
         targets
     };
+
 
     return (
         <div className="p-2 bg-white rounded-xl shadow-lg w-full h-screen">
@@ -20,7 +22,7 @@ const DiseaseTargetHeatmapPage = () => {
                 Disease Target Associations: {diseaseName}
             </h1>
             <div className="w-full h-[90%] overflow-auto">
-                <DiseaseTargetHeatmap diseaseName={diseaseName} data={diseaseData} />
+                <DiseaseTargetHeatmap diseaseID={diseaseID} diseaseName={diseaseName} data={diseaseData} />
             </div>
         </div>
     );
