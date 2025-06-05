@@ -1,0 +1,24 @@
+{
+  "biomarkers": [
+    "IL-6",
+    "TNF-α",
+    "EGFR",
+    "VEGF",
+    "HER2",
+    "BRCA1",
+    "BRCA2",
+    "p53",
+    "Ki-67",
+    "PSA",
+    "CEA",
+    "CA-125",
+    "AFP",
+    "HbA1c",
+    "CRP",
+    "ESR",
+    "Troponin",
+    "BNP",
+    "D-dimer",
+    "Ferritin"
+  ]
+}
