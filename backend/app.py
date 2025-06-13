@@ -3,7 +3,7 @@ from flask_cors import CORS
 import io
 import time
 import base64
-
+import pandas as pd
 import numpy as np
 from openpyxl import load_workbook
 
@@ -244,6 +244,70 @@ def biomarkers_symptom():
     return jsonify(result)
 
 
+
+
+@app.route('/ligmaballs', methods=["POST"])
+def match_disease_and_biomarker():
+    # Extract data from the request
+    disease_name = request.json.get('disease', '').strip()
+    biomarker = request.json.get('biomarker', '').strip()
+    symptom_data = request.json.get('symptom_data', {})
+
+    print(f"Received disease: {disease_name}, biomarker: {biomarker}")
+    print(f"Received symptom_data: {symptom_data}")
+
+    if not disease_name or not biomarker:
+        return {"error": "Disease name and biomarker are required."}, 400
+
+    excel_file_path = './Test_output_o4_mini_new.xlsx'
+
+    # Load the Excel file
+    df = pd.read_excel(excel_file_path)
+
+    # Initialize list to store relevant diseases
+    relevant_diseases = []
+
+    # Handle the nested_assoc within symptom_data
+    if "nested_assoc" in symptom_data:
+        for key, value in symptom_data["nested_assoc"].items():
+            # Check if disease_name is in the disease list within nested_assoc
+            for disease in value:
+                if disease_name.lower() in disease.lower():
+                    relevant_diseases.append(disease)
+
+    print(f"Relevant diseases found: {relevant_diseases}")
+
+    if not relevant_diseases:
+        return {"error": "No diseases found for this symptom."}, 404
+
+    # Normalize the disease name to handle multiple disease matches (split by commas if necessary)
+    disease_matches = df[df['Disease_Name'].apply(
+        lambda x: any(disease.strip().lower() == disease_name.lower() for disease in str(x).split(','))
+    )]
+
+    # Filter rows where the biomarker matches the input biomarker (handle comma-separated biomarkers)
+    biomarker_match = disease_matches[disease_matches['Biomarker_Mapped'].apply(
+        lambda x: any(bm.strip().lower() == biomarker.lower() for bm in str(x).split(','))
+    )]
+
+    if biomarker_match.empty:
+        return {"error": "No matching biomarker found for this disease."}, 404
+
+    def get_matching_biomarker(row_biomarker, biomarker_input):
+        # Split the biomarker string into a list and return only the matching one
+        biomarker_list = [bm.strip() for bm in str(row_biomarker).split(',')]
+        matching_biomarker = [bm for bm in biomarker_list if bm.lower() == biomarker_input.lower()]
+        return matching_biomarker[0] if matching_biomarker else ''
+
+    # Apply the function to get the matching biomarker
+    biomarker_match['Matched_Biomarker'] = biomarker_match['Biomarker_Mapped'].apply(lambda x: get_matching_biomarker(x, biomarker))
+
+    # Return the relevant columns if a match is found, along with the matched biomarker
+    result = biomarker_match[['Matched_Biomarker', 'Reference Point', 'Quantified Changes', 'Comparison to Reference', 'Direction', 'Insights']]
+
+    return jsonify({
+        "result": result.to_dict(orient='records'),
+    }), 200
 
 if __name__ == "__main__":
     # By default, Flask runs on http://127.0.0.1:5000

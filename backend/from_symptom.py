@@ -178,6 +178,34 @@ def process_symptom_data(symptom_name):
     return biomarker_names, inhibitor_avg, promoter_avg
 
 
+
+
+# Function to extract top 5 biomarkers for a specific disease
+def get_top_biomarkers_for_disease(disease_name, symptom_data, top_n=5):
+    if not symptom_data:
+        return {"error": "Symptom data is missing."}
+
+    # Filter the symptom data for the specific disease
+    filtered_data = {biomarker: symptoms for biomarker, symptoms in symptom_data.items() if disease_name in symptoms}
+
+    if not filtered_data:
+        return {"Biomarkers": [], "Scores": []}
+
+    # Calculate average score for each biomarker for the given disease
+    averages = {}
+    for biomarker, diseases in filtered_data.items():
+        if disease_name in diseases:
+            disease_data = diseases[disease_name]
+            avg_score = disease_data.get('total_avg', 0)
+            averages[biomarker] = avg_score
+
+    # Sort biomarkers by their average score and return the top_n
+    sorted_biomarkers = sorted(averages.items(), key=lambda x: x[1], reverse=True)[:top_n]
+
+    biomarkers, scores = zip(*sorted_biomarkers) if sorted_biomarkers else ([], [])
+    return {"Biomarkers": list(biomarkers), "Scores": list(scores)}
+
+
 if __name__ == "__main__":
     # Example Usage:
     symptom_name = "Anxiety"

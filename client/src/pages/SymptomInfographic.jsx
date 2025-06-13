@@ -16,8 +16,10 @@
 //   BarChart3,
 //   ZoomIn,
 //   ZoomOut,
-//   Download,
+//   Loader2,
 // } from "lucide-react"
+// import { Bar, BarChart, CartesianGrid, XAxis, YAxis, Tooltip, Legend } from "recharts"
+// import { CardHeader, CardTitle, CardDescription, CardContent } from "@/components/ui/card"
 
 // export default function SymptomInfographic() {
 //   const location = useLocation()
@@ -29,7 +31,11 @@
 //   const [circleDetails, setCircleDetails] = useState(null)
 //   const [activeTab, setActiveTab] = useState("matrix")
 //   const [zoomLevel, setZoomLevel] = useState(1)
+//   const [apiData, setApiData] = useState(null)
+//   const [isLoading, setIsLoading] = useState(false)
+//   const [apiError, setApiError] = useState(null)
 //   const svgContainerRef = useRef(null)
+//   const detailsSectionRef = useRef(null)
 
 //   // Fixed circle size
 //   const CIRCLE_RADIUS = 16
@@ -57,6 +63,18 @@
 //       container.scrollLeft = (width * zoomLevel - container.clientWidth) / 2
 //     }
 //   }, [width, zoomLevel])
+
+//   // Auto-scroll to details section when details are shown
+//   useEffect(() => {
+//     if ((selectedDisease && diseaseDetails) || (selectedCircle && circleDetails)) {
+//       setTimeout(() => {
+//         detailsSectionRef.current?.scrollIntoView({
+//           behavior: "smooth",
+//           block: "start",
+//         })
+//       }, 100)
+//     }
+//   }, [selectedDisease, diseaseDetails, selectedCircle, circleDetails])
 
 //   // Show error message if no data is available
 //   if (!symptomData) {
@@ -104,13 +122,13 @@
 //     setTooltip({
 //       biomarker,
 //       disease,
-//       total_avg: datum.total_avg,
-//       avg_inhibitor: datum.avg_inhibitor,
-//       avg_promoter: datum.avg_promoter,
-//       avg_unknown: datum.avg_unknown,
-//       percent_inhibitor: datum.percent_inhibitor,
-//       percent_promoter: datum.percent_promoter,
-//       percent_unknown: datum.percent_unknown,
+//       total_avg: datum.total_avg || 0,
+//       avg_inhibitor: datum.avg_inhibitor || 0,
+//       avg_promoter: datum.avg_promoter || 0,
+//       avg_unknown: datum.avg_unknown || 0,
+//       percent_inhibitor: datum.percent_inhibitor || 0,
+//       percent_promoter: datum.percent_promoter || 0,
+//       percent_unknown: datum.percent_unknown || 0,
 //       x: rect.left + rect.width / 2,
 //       y: rect.top - 10,
 //     })
@@ -122,6 +140,12 @@
 
 //   // Handle disease click
 //   const handleDiseaseClick = (disease) => {
+//     // Clear circle selection when selecting a disease
+//     setSelectedCircle(null)
+//     setCircleDetails(null)
+//     setApiData(null)
+//     setApiError(null)
+
 //     setSelectedDisease(disease)
 
 //     // Calculate statistics for this disease across all biomarkers
@@ -191,25 +215,67 @@
 //     setDiseaseDetails(diseaseStats)
 //   }
 
-//   // Handle circle click
-//   const handleCircleClick = (biomarker, disease, datum) => {
+//   // Handle circle click with API call
+//   const handleCircleClick = async (biomarker, disease, datum) => {
 //     if (!datum) return
+
+//     // Clear disease selection when selecting a circle
+//     setSelectedDisease(null)
+//     setDiseaseDetails(null)
 
 //     setSelectedCircle({ biomarker, disease })
 //     setCircleDetails({
 //       biomarker,
 //       disease,
 //       symptom,
-//       ...datum,
+//       total_avg: datum.total_avg || 0,
+//       avg_inhibitor: datum.avg_inhibitor || 0,
+//       avg_promoter: datum.avg_promoter || 0,
+//       avg_unknown: datum.avg_unknown || 0,
+//       percent_inhibitor: datum.percent_inhibitor || 0,
+//       percent_promoter: datum.percent_promoter || 0,
+//       percent_unknown: datum.percent_unknown || 0,
 //       // Additional analysis
 //       dominantType:
-//         datum.percent_inhibitor > datum.percent_promoter && datum.percent_inhibitor > datum.percent_unknown
+//         (datum.percent_inhibitor || 0) > (datum.percent_promoter || 0) &&
+//         (datum.percent_inhibitor || 0) > (datum.percent_unknown || 0)
 //           ? "Inhibitor"
-//           : datum.percent_promoter > datum.percent_unknown
+//           : (datum.percent_promoter || 0) > (datum.percent_unknown || 0)
 //             ? "Promoter"
 //             : "Unknown",
-//       confidence: Math.max(datum.percent_inhibitor, datum.percent_promoter, datum.percent_unknown),
+//       confidence: Math.max(datum.percent_inhibitor || 0, datum.percent_promoter || 0, datum.percent_unknown || 0),
 //     })
+
+//     // Make API call to get additional data
+//     setIsLoading(true)
+//     setApiData(null)
+//     setApiError(null)
+
+//     try {
+//       const response = await fetch(`${import.meta.env.VITE_API_URL}/ligmaballs`, {
+//         method: "POST",
+//         headers: {
+//           "Content-Type": "application/json",
+//         },
+//         body: JSON.stringify({
+//           disease: disease,
+//           biomarker: biomarker,
+//           symptom_data: symptomData,
+//         }),
+//       })
+
+//       if (!response.ok) {
+//         throw new Error(`API request failed with status ${response.status}`)
+//       }
+
+//       const data = await response.json()
+//       setApiData(data)
+//     } catch (error) {
+//       console.error("Error fetching data from API:", error)
+//       setApiError(error.message || "Failed to fetch data from API")
+//     } finally {
+//       setIsLoading(false)
+//     }
 //   }
 
 //   // Handle zoom controls
@@ -284,10 +350,13 @@
 //           </div>
 
 //           <TabsContent value="matrix" className="mt-0">
-//             <div className="flex h-[calc(100vh-220px)]">
+//             <div className="space-y-4">
 //               {/* Main Visualization */}
-//               <div className="flex-1 overflow-hidden">
-//                 <div className="border border-slate-200 rounded-lg bg-white shadow-sm overflow-auto h-full">
+//               <div className="overflow-hidden">
+//                 <div
+//                   className="border border-slate-200 rounded-lg bg-white shadow-sm overflow-auto"
+//                   style={{ height: `${VISUALIZATION_HEIGHT}px` }}
+//                 >
 //                   <div ref={svgContainerRef} className="overflow-auto" style={{ height: "100%", width: "100%" }}>
 //                     <svg
 //                       width={width * zoomLevel}
@@ -424,9 +493,9 @@
 //                 </div>
 //               </div>
 
-//               {/* Side Panel for Disease/Circle Details */}
+//               {/* Details Panel Below Visualization */}
 //               {(selectedDisease && diseaseDetails) || (selectedCircle && circleDetails) ? (
-//                 <div className="w-96 bg-white border-l border-slate-200 overflow-auto">
+//                 <div ref={detailsSectionRef} className="bg-white border border-slate-200 rounded-lg shadow-sm">
 //                   <div className="p-6">
 //                     <div className="flex items-center justify-between mb-4">
 //                       <h3 className="text-lg font-bold text-slate-800">
@@ -440,6 +509,8 @@
 //                           setDiseaseDetails(null)
 //                           setSelectedCircle(null)
 //                           setCircleDetails(null)
+//                           setApiData(null)
+//                           setApiError(null)
 //                         }}
 //                       >
 //                         <X className="h-4 w-4" />
@@ -448,50 +519,52 @@
 
 //                     {/* Disease Details */}
 //                     {selectedDisease && diseaseDetails && (
-//                       <div className="space-y-4">
-//                         <div>
-//                           <h4 className="font-semibold text-slate-700 mb-2">{selectedDisease}</h4>
-//                           <div className="grid grid-cols-2 gap-3 text-sm">
-//                             <div className="bg-slate-50 p-3 rounded-lg">
-//                               <div className="text-slate-500">Coverage</div>
-//                               <div className="font-semibold">
-//                                 {diseaseDetails.biomarkersWithData}/{diseaseDetails.totalBiomarkers}
+//                       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+//                         <div className="space-y-4">
+//                           <div>
+//                             <h4 className="font-semibold text-slate-700 mb-2">{selectedDisease}</h4>
+//                             <div className="grid grid-cols-2 gap-3 text-sm">
+//                               <div className="bg-slate-50 p-3 rounded-lg">
+//                                 <div className="text-slate-500">Coverage</div>
+//                                 <div className="font-semibold">
+//                                   {diseaseDetails.biomarkersWithData}/{diseaseDetails.totalBiomarkers}
+//                                 </div>
 //                               </div>
-//                             </div>
-//                             <div className="bg-slate-50 p-3 rounded-lg">
-//                               <div className="text-slate-500">Avg Score</div>
-//                               <div className="font-semibold">{diseaseDetails.avgTotalScore.toFixed(3)}</div>
-//                             </div>
-//                           </div>
-//                         </div>
-
-//                         <div className="space-y-3">
-//                           <div className="flex items-center gap-2 p-3 bg-green-50 rounded-lg">
-//                             <TrendingDown className="h-4 w-4 text-green-600" />
-//                             <div className="flex-1">
-//                               <div className="text-sm text-green-700 font-medium">Avg Inhibitor Score</div>
-//                               <div className="text-lg font-bold text-green-800">
-//                                 {diseaseDetails.avgInhibitorScore.toFixed(3)}
+//                               <div className="bg-slate-50 p-3 rounded-lg">
+//                                 <div className="text-slate-500">Avg Score</div>
+//                                 <div className="font-semibold">{diseaseDetails.avgTotalScore.toFixed(3)}</div>
 //                               </div>
 //                             </div>
 //                           </div>
 
-//                           <div className="flex items-center gap-2 p-3 bg-yellow-50 rounded-lg">
-//                             <TrendingUp className="h-4 w-4 text-yellow-600" />
-//                             <div className="flex-1">
-//                               <div className="text-sm text-yellow-700 font-medium">Avg Promoter Score</div>
-//                               <div className="text-lg font-bold text-yellow-800">
-//                                 {diseaseDetails.avgPromoterScore.toFixed(3)}
+//                           <div className="space-y-3">
+//                             <div className="flex items-center gap-2 p-3 bg-green-50 rounded-lg">
+//                               <TrendingDown className="h-4 w-4 text-green-600" />
+//                               <div className="flex-1">
+//                                 <div className="text-sm text-green-700 font-medium">Avg Inhibitor Score</div>
+//                                 <div className="text-lg font-bold text-green-800">
+//                                   {diseaseDetails.avgInhibitorScore.toFixed(3)}
+//                                 </div>
 //                               </div>
 //                             </div>
-//                           </div>
 
-//                           <div className="flex items-center gap-2 p-3 bg-gray-50 rounded-lg">
-//                             <HelpCircle className="h-4 w-4 text-gray-600" />
-//                             <div className="flex-1">
-//                               <div className="text-sm text-gray-700 font-medium">Avg Unknown Score</div>
-//                               <div className="text-lg font-bold text-gray-800">
-//                                 {diseaseDetails.avgUnknownScore.toFixed(3)}
+//                             <div className="flex items-center gap-2 p-3 bg-yellow-50 rounded-lg">
+//                               <TrendingUp className="h-4 w-4 text-yellow-600" />
+//                               <div className="flex-1">
+//                                 <div className="text-sm text-yellow-700 font-medium">Avg Promoter Score</div>
+//                                 <div className="text-lg font-bold text-yellow-800">
+//                                   {diseaseDetails.avgPromoterScore.toFixed(3)}
+//                                 </div>
+//                               </div>
+//                             </div>
+
+//                             <div className="flex items-center gap-2 p-3 bg-gray-50 rounded-lg">
+//                               <HelpCircle className="h-4 w-4 text-gray-600" />
+//                               <div className="flex-1">
+//                                 <div className="text-sm text-gray-700 font-medium">Avg Unknown Score</div>
+//                                 <div className="text-lg font-bold text-gray-800">
+//                                   {diseaseDetails.avgUnknownScore.toFixed(3)}
+//                                 </div>
 //                               </div>
 //                             </div>
 //                           </div>
@@ -519,63 +592,106 @@
 
 //                     {/* Circle Details */}
 //                     {selectedCircle && circleDetails && (
-//                       <div className="space-y-4">
-//                         <div>
-//                           <h4 className="font-semibold text-slate-700 mb-1">
-//                             {circleDetails.biomarker.replace(/_/g, " ")}
-//                           </h4>
-//                           <p className="text-sm text-slate-600 mb-3">{circleDetails.disease}</p>
+//                       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+//                         <div className="space-y-4">
+//                           <div>
+//                             <h4 className="font-semibold text-slate-700 mb-1">
+//                               {circleDetails.biomarker.replace(/_/g, " ")}
+//                             </h4>
+//                             <p className="text-sm text-slate-600 mb-3">{circleDetails.disease}</p>
 
-//                           <div className="bg-blue-50 p-3 rounded-lg mb-4">
-//                             <div className="text-sm text-blue-700 font-medium">Dominant Effect</div>
-//                             <div className="text-lg font-bold text-blue-800">
-//                               {circleDetails.dominantType} ({circleDetails.confidence.toFixed(1)}%)
+//                             <div className="bg-blue-50 p-3 rounded-lg mb-4">
+//                               <div className="text-sm text-blue-700 font-medium">Dominant Effect</div>
+//                               <div className="text-lg font-bold text-blue-800">
+//                                 {circleDetails.dominantType} ({(circleDetails.confidence || 0).toFixed(1)}%)
+//                               </div>
 //                             </div>
+//                           </div>
+
+//                           <div className="space-y-3">
+//                             {circleDetails.avg_inhibitor !== null && circleDetails.avg_inhibitor !== undefined && (
+//                               <div className="p-3 bg-green-50 border border-green-200 rounded-lg">
+//                                 <div className="text-sm font-medium text-green-700">Antagonist Effect</div>
+//                                 <div className="text-lg font-bold text-green-800">
+//                                   {(circleDetails.avg_inhibitor || 0).toFixed(4)} (
+//                                   {(circleDetails.percent_inhibitor || 0).toFixed(1)}%)
+//                                 </div>
+//                               </div>
+//                             )}
+
+//                             {circleDetails.avg_promoter !== null && circleDetails.avg_promoter !== undefined && (
+//                               <div className="p-3 bg-yellow-50 border border-yellow-200 rounded-lg">
+//                                 <div className="text-sm font-medium text-yellow-700">Agonist Effect</div>
+//                                 <div className="text-lg font-bold text-yellow-800">
+//                                   {(circleDetails.avg_promoter || 0).toFixed(4)} (
+//                                   {(circleDetails.percent_promoter || 0).toFixed(1)}%)
+//                                 </div>
+//                               </div>
+//                             )}
+
+//                             {circleDetails.avg_unknown !== null && circleDetails.avg_unknown !== undefined && (
+//                               <div className="p-3 bg-gray-50 border border-gray-200 rounded-lg">
+//                                 <div className="text-sm font-medium text-gray-700">Unknown Effect</div>
+//                                 <div className="text-lg font-bold text-gray-800">
+//                                   {(circleDetails.avg_unknown || 0).toFixed(4)} (
+//                                   {(circleDetails.percent_unknown || 0).toFixed(1)}%)
+//                                 </div>
+//                               </div>
+//                             )}
 //                           </div>
 //                         </div>
 
-//                         <div className="space-y-3">
+//                         <div className="space-y-4">
+//                           <div className="p-3 bg-blue-50 rounded-lg">
+//                             <h5 className="font-medium text-blue-800 mb-2">Clinical Significance</h5>
+//                             <p className="text-sm text-blue-700">
+//                               This {circleDetails.dominantType.toLowerCase()} relationship between{" "}
+//                               <strong>{circleDetails.biomarker.replace(/_/g, " ")}</strong> and{" "}
+//                               <strong>{circleDetails.disease}</strong> in the context of{" "}
+//                               <strong>{circleDetails.symptom}</strong> suggests potential therapeutic targets.
+//                             </p>
+//                           </div>
+
+//                           {/* API Data Section */}
 //                           <div className="p-3 bg-slate-50 rounded-lg">
-//                             <div className="text-sm text-slate-600">Total Average Score</div>
-//                             <div className="text-xl font-bold text-slate-800">{circleDetails.total_avg.toFixed(4)}</div>
+//                             <h5 className="font-medium text-slate-800 mb-2 flex items-center justify-between">
+//                               <span>Additional Research Data</span>
+//                               {isLoading && <Loader2 className="h-4 w-4 animate-spin text-blue-600" />}
+//                             </h5>
+
+//                             {isLoading && (
+//                               <div className="text-center py-4">
+//                                 <Loader2 className="h-8 w-8 animate-spin mx-auto text-blue-600 mb-2" />
+//                                 <p className="text-sm text-slate-600">Loading additional data...</p>
+//                               </div>
+//                             )}
+
+//                             {apiError && (
+//                               <div className="p-3 bg-red-50 border border-red-200 rounded-lg">
+//                                 <p className="text-sm text-red-700">
+//                                   <span className="font-medium">Error:</span> {apiError}
+//                                 </p>
+//                               </div>
+//                             )}
+
+//                             {!isLoading && !apiError && apiData && (
+//                               <div className="text-sm text-slate-700">
+//                                 <p className="mb-2">
+//                                   API data loaded successfully. This section will be updated to display the research
+//                                   data.
+//                                 </p>
+//                                 <pre className="bg-slate-100 p-2 rounded text-xs overflow-auto max-h-40">
+//                                   {JSON.stringify(apiData, null, 2)}
+//                                 </pre>
+//                               </div>
+//                             )}
+
+//                             {!isLoading && !apiError && !apiData && (
+//                               <p className="text-sm text-slate-600">
+//                                 Additional research data will appear here once loaded.
+//                               </p>
+//                             )}
 //                           </div>
-
-//                           {circleDetails.avg_inhibitor !== null && (
-//                             <div className="p-3 bg-green-50 border border-green-200 rounded-lg">
-//                               <div className="text-sm font-medium text-green-700">Inhibitor Effect</div>
-//                               <div className="text-lg font-bold text-green-800">
-//                                 {circleDetails.avg_inhibitor.toFixed(4)} ({circleDetails.percent_inhibitor.toFixed(1)}%)
-//                               </div>
-//                             </div>
-//                           )}
-
-//                           {circleDetails.avg_promoter !== null && (
-//                             <div className="p-3 bg-yellow-50 border border-yellow-200 rounded-lg">
-//                               <div className="text-sm font-medium text-yellow-700">Promoter Effect</div>
-//                               <div className="text-lg font-bold text-yellow-800">
-//                                 {circleDetails.avg_promoter.toFixed(4)} ({circleDetails.percent_promoter.toFixed(1)}%)
-//                               </div>
-//                             </div>
-//                           )}
-
-//                           {circleDetails.avg_unknown !== null && (
-//                             <div className="p-3 bg-gray-50 border border-gray-200 rounded-lg">
-//                               <div className="text-sm font-medium text-gray-700">Unknown Effect</div>
-//                               <div className="text-lg font-bold text-gray-800">
-//                                 {circleDetails.avg_unknown.toFixed(4)} ({circleDetails.percent_unknown.toFixed(1)}%)
-//                               </div>
-//                             </div>
-//                           )}
-//                         </div>
-
-//                         <div className="p-3 bg-blue-50 rounded-lg">
-//                           <h5 className="font-medium text-blue-800 mb-2">Clinical Significance</h5>
-//                           <p className="text-sm text-blue-700">
-//                             This {circleDetails.dominantType.toLowerCase()} relationship between{" "}
-//                             <strong>{circleDetails.biomarker.replace(/_/g, " ")}</strong> and{" "}
-//                             <strong>{circleDetails.disease}</strong> in the context of{" "}
-//                             <strong>{circleDetails.symptom}</strong> suggests potential therapeutic targets.
-//                           </p>
 //                         </div>
 //                       </div>
 //                     )}
@@ -586,52 +702,294 @@
 //           </TabsContent>
 
 //           <TabsContent value="plots" className="mt-0">
-//             <div className="bg-white rounded-lg border border-slate-200 p-6">
-//               <h3 className="text-xl font-bold text-slate-800 mb-6">Statistical Analysis Plots</h3>
-//               <div className="grid grid-cols-1 gap-8">
-//                 {plots &&
-//                   Object.entries(plots).map(([plotType, base64Data]) => (
-//                     <Card key={plotType} className="overflow-hidden">
-//                       <div className="p-4 border-b border-slate-200 bg-slate-50 flex justify-between items-center">
-//                         <h4 className="font-semibold text-slate-700 flex items-center gap-2">
-//                           <BarChart3 className="h-5 w-5" />
-//                           {plotType} Analysis for "{symptom}"
-//                         </h4>
-//                         <Button
-//                           variant="outline"
-//                           size="sm"
-//                           onClick={() => downloadPlot(plotType, base64Data)}
-//                           className="flex items-center gap-1"
-//                         >
-//                           <Download className="h-4 w-4" />
-//                           <span>Download</span>
-//                         </Button>
-//                       </div>
-//                       <div className="p-4 flex justify-center bg-white">
-//                         <div className="max-w-full overflow-x-auto">
-//                           <img
-//                             src={`data:image/png;base64,${base64Data}`}
-//                             alt={`${plotType} plot for ${symptom}`}
-//                             className="max-w-none h-auto"
-//                             onError={(e) => {
-//                               e.target.style.display = "none"
-//                               e.target.nextSibling.style.display = "block"
-//                             }}
-//                           />
-//                           <div className="hidden text-center text-slate-500 py-16 px-8">
-//                             <BarChart3 className="h-12 w-12 mx-auto mb-4 opacity-50" />
-//                             <p>Plot data unavailable or could not be rendered</p>
+//             <div className="space-y-6">
+//               <div className="bg-white rounded-lg border border-slate-200 p-6 shadow-sm">
+//                 <div className="flex items-center justify-between mb-6">
+//                   <div>
+//                     <h3 className="text-2xl font-bold text-slate-800">Statistical Analysis Plots</h3>
+//                     <p className="text-slate-600 mt-1">Interactive biomarker analysis for "{symptom}"</p>
+//                   </div>
+//                   <Badge variant="secondary" className="text-sm">
+//                     {(symptomData?.plot_data?.inhibitor?.length || 0) + (symptomData?.plot_data?.promoter?.length || 0)}{" "}
+//                     Total Biomarkers
+//                   </Badge>
+//                 </div>
+
+//                 {symptomData?.plot_data ? (
+//                   <div className="space-y-8">
+//                     {/* Inhibitor Chart */}
+//                     {symptomData.plot_data.inhibitor && symptomData.plot_data.inhibitor.length > 0 && (
+//                       <Card className="overflow-hidden border-green-200 bg-gradient-to-br from-green-50 to-emerald-50">
+//                         <CardHeader className="bg-gradient-to-r from-green-600 to-emerald-600 text-white">
+//                           <CardTitle className="flex items-center gap-3 text-xl">
+//                             <div className="p-2 bg-white/20 rounded-lg">
+//                               <TrendingDown className="h-6 w-6" />
+//                             </div>
+//                             <div>
+//                               <div>Inhibitor Biomarkers Analysis</div>
+//                               <div className="text-green-100 text-sm font-normal mt-1">
+//                                 {symptomData.plot_data.inhibitor.length} biomarkers showing inhibitory effects
+//                               </div>
+//                             </div>
+//                           </CardTitle>
+//                         </CardHeader>
+//                         <CardContent className="p-6">
+//                           <div className="w-full" style={{ height: "500px" }}>
+//                             <BarChart
+//                               width={1000}
+//                               height={500}
+//                               data={symptomData.plot_data.inhibitor.map((item) => {
+//                                 const chartItem = {
+//                                   biomarker:
+//                                     item.biomarker.replace(/_/g, " ").length > 20
+//                                       ? item.biomarker.replace(/_/g, " ").substring(0, 20) + "..."
+//                                       : item.biomarker.replace(/_/g, " "),
+//                                   fullName: item.biomarker.replace(/_/g, " "),
+//                                 }
+//                                 item.diseases.forEach((disease) => {
+//                                   chartItem[disease.disease.replace(/\s+/g, "_")] = disease.score
+//                                 })
+//                                 return chartItem
+//                               })}
+//                               margin={{ top: 20, right: 40, left: 20, bottom: 80 }}
+//                               className="w-full"
+//                             >
+//                               <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
+//                               <XAxis
+//                                 dataKey="biomarker"
+//                                 angle={-45}
+//                                 textAnchor="end"
+//                                 height={100}
+//                                 fontSize={11}
+//                                 stroke="#475569"
+//                                 tick={{ fill: "#475569" }}
+//                               />
+//                               <YAxis stroke="#475569" tick={{ fill: "#475569" }} fontSize={12} />
+//                               <Tooltip
+//                                 content={({ active, payload, label }) => {
+//                                   if (active && payload && payload.length) {
+//                                     const data = payload[0]?.payload
+//                                     return (
+//                                       <div className="bg-white p-4 border border-green-200 rounded-lg shadow-xl">
+//                                         <p className="font-semibold text-green-800 mb-2">{data?.fullName || label}</p>
+//                                         <div className="space-y-1">
+//                                           {payload.map((entry, index) => (
+//                                             <div key={index} className="flex items-center justify-between gap-4">
+//                                               <div className="flex items-center gap-2">
+//                                                 <div
+//                                                   className="w-3 h-3 rounded"
+//                                                   style={{ backgroundColor: entry.color }}
+//                                                 />
+//                                                 <span className="text-sm text-slate-700">
+//                                                   {entry.dataKey.replace(/_/g, " ")}:
+//                                                 </span>
+//                                               </div>
+//                                               <span className="font-semibold text-slate-900">
+//                                                 {entry.value?.toFixed(4)}
+//                                               </span>
+//                                             </div>
+//                                           ))}
+//                                         </div>
+//                                       </div>
+//                                     )
+//                                   }
+//                                   return null
+//                                 }}
+//                               />
+//                               <Legend wrapperStyle={{ paddingTop: "20px" }} iconType="rect" />
+//                               {diseases.map((disease, index) => (
+//                                 <Bar
+//                                   key={disease}
+//                                   dataKey={disease.replace(/\s+/g, "_")}
+//                                   stackId="inhibitor"
+//                                   fill={`hsl(${120 + index * 25}, 65%, ${45 + (index % 3) * 10}%)`}
+//                                   radius={index === diseases.length - 1 ? [4, 4, 0, 0] : [0, 0, 0, 0]}
+//                                 />
+//                               ))}
+//                             </BarChart>
+//                           </div>
+//                         </CardContent>
+//                       </Card>
+//                     )}
+
+//                     {/* Promoter Chart */}
+//                     {symptomData.plot_data.promoter && symptomData.plot_data.promoter.length > 0 && (
+//                       <Card className="overflow-hidden border-amber-200 bg-gradient-to-br from-amber-50 to-yellow-50">
+//                         <CardHeader className="bg-gradient-to-r from-amber-600 to-yellow-600 text-white">
+//                           <CardTitle className="flex items-center gap-3 text-xl">
+//                             <div className="p-2 bg-white/20 rounded-lg">
+//                               <TrendingUp className="h-6 w-6" />
+//                             </div>
+//                             <div>
+//                               <div>Promoter Biomarkers Analysis</div>
+//                               <div className="text-amber-100 text-sm font-normal mt-1">
+//                                 {symptomData.plot_data.promoter.length} biomarkers showing promotional effects
+//                               </div>
+//                             </div>
+//                           </CardTitle>
+//                         </CardHeader>
+//                         <CardContent className="p-6">
+//                           <div className="w-full" style={{ height: "500px" }}>
+//                             <BarChart
+//                               width={1000}
+//                               height={500}
+//                               data={symptomData.plot_data.promoter.map((item) => {
+//                                 const chartItem = {
+//                                   biomarker:
+//                                     item.biomarker.replace(/_/g, " ").length > 20
+//                                       ? item.biomarker.replace(/_/g, " ").substring(0, 20) + "..."
+//                                       : item.biomarker.replace(/_/g, " "),
+//                                   fullName: item.biomarker.replace(/_/g, " "),
+//                                 }
+//                                 item.diseases.forEach((disease) => {
+//                                   chartItem[disease.disease.replace(/\s+/g, "_")] = disease.score
+//                                 })
+//                                 return chartItem
+//                               })}
+//                               margin={{ top: 20, right: 40, left: 20, bottom: 80 }}
+//                               className="w-full"
+//                             >
+//                               <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
+//                               <XAxis
+//                                 dataKey="biomarker"
+//                                 angle={-45}
+//                                 textAnchor="end"
+//                                 height={100}
+//                                 fontSize={11}
+//                                 stroke="#475569"
+//                                 tick={{ fill: "#475569" }}
+//                               />
+//                               <YAxis stroke="#475569" tick={{ fill: "#475569" }} fontSize={12} />
+//                               <Tooltip
+//                                 content={({ active, payload, label }) => {
+//                                   if (active && payload && payload.length) {
+//                                     const data = payload[0]?.payload
+//                                     return (
+//                                       <div className="bg-white p-4 border border-amber-200 rounded-lg shadow-xl">
+//                                         <p className="font-semibold text-amber-800 mb-2">{data?.fullName || label}</p>
+//                                         <div className="space-y-1">
+//                                           {payload.map((entry, index) => (
+//                                             <div key={index} className="flex items-center justify-between gap-4">
+//                                               <div className="flex items-center gap-2">
+//                                                 <div
+//                                                   className="w-3 h-3 rounded"
+//                                                   style={{ backgroundColor: entry.color }}
+//                                                 />
+//                                                 <span className="text-sm text-slate-700">
+//                                                   {entry.dataKey.replace(/_/g, " ")}:
+//                                                 </span>
+//                                               </div>
+//                                               <span className="font-semibold text-slate-900">
+//                                                 {entry.value?.toFixed(4)}
+//                                               </span>
+//                                             </div>
+//                                           ))}
+//                                         </div>
+//                                       </div>
+//                                     )
+//                                   }
+//                                   return null
+//                                 }}
+//                               />
+//                               <Legend wrapperStyle={{ paddingTop: "20px" }} iconType="rect" />
+//                               {diseases.map((disease, index) => (
+//                                 <Bar
+//                                   key={disease}
+//                                   dataKey={disease.replace(/\s+/g, "_")}
+//                                   stackId="promoter"
+//                                   fill={`hsl(${45 + index * 25}, 70%, ${50 + (index % 3) * 8}%)`}
+//                                   radius={index === diseases.length - 1 ? [4, 4, 0, 0] : [0, 0, 0, 0]}
+//                                 />
+//                               ))}
+//                             </BarChart>
+//                           </div>
+//                         </CardContent>
+//                       </Card>
+//                     )}
+
+//                     {/* Enhanced Summary Statistics */}
+//                     <Card className="bg-gradient-to-br from-slate-50 to-blue-50 border-slate-200">
+//                       <CardHeader className="bg-gradient-to-r from-slate-700 to-blue-700 text-white">
+//                         <CardTitle className="flex items-center gap-3">
+//                           <BarChart3 className="h-6 w-6" />
+//                           Summary Statistics
+//                         </CardTitle>
+//                         <CardDescription className="text-slate-200">
+//                           Overview of biomarker associations for "{symptom}"
+//                         </CardDescription>
+//                       </CardHeader>
+//                       <CardContent className="p-6">
+//                         <div className="grid grid-cols-2 lg:grid-cols-4 gap-6">
+//                           <div className="text-center p-6 bg-gradient-to-br from-green-100 to-emerald-100 rounded-xl border border-green-200 shadow-sm">
+//                             <div className="text-3xl font-bold text-green-700 mb-2">
+//                               {symptomData.plot_data.inhibitor?.length || 0}
+//                             </div>
+//                             <div className="text-sm font-medium text-green-600 mb-1">Inhibitor Biomarkers</div>
+//                             <div className="text-xs text-green-500">Suppressive effects</div>
+//                           </div>
+//                           <div className="text-center p-6 bg-gradient-to-br from-amber-100 to-yellow-100 rounded-xl border border-amber-200 shadow-sm">
+//                             <div className="text-3xl font-bold text-amber-700 mb-2">
+//                               {symptomData.plot_data.promoter?.length || 0}
+//                             </div>
+//                             <div className="text-sm font-medium text-amber-600 mb-1">Promoter Biomarkers</div>
+//                             <div className="text-xs text-amber-500">Enhancing effects</div>
 //                           </div>
 //                         </div>
-//                       </div>
-//                       <div className="p-4 bg-slate-50 border-t border-slate-200">
-//                         <p className="text-sm text-slate-600">
-//                           This plot shows the {plotType.toLowerCase()} relationship between biomarkers and diseases for
-//                           the symptom "{symptom}". Each bar represents a biomarker's score, stacked by disease.
-//                         </p>
-//                       </div>
+
+//                         {/* Additional insights */}
+//                         <div className="mt-6 p-4 bg-white rounded-lg border border-slate-200">
+//                           <h4 className="font-semibold text-slate-700 mb-3 flex items-center gap-2">
+//                             <Info className="h-4 w-4" />
+//                             Key Insights
+//                           </h4>
+//                           <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm">
+//                             <div className="flex items-start gap-2">
+//                               <div className="w-2 h-2 bg-green-500 rounded-full mt-2 flex-shrink-0"></div>
+//                               <div>
+//                                 <span className="font-medium text-slate-700">Inhibitor Dominance:</span>
+//                                 <span className="text-slate-600 ml-1">
+//                                   {(
+//                                     ((symptomData.plot_data.inhibitor?.length || 0) /
+//                                       ((symptomData.plot_data.inhibitor?.length || 0) +
+//                                         (symptomData.plot_data.promoter?.length || 0))) *
+//                                     100
+//                                   ).toFixed(1)}
+//                                   % of biomarkers show inhibitory effects
+//                                 </span>
+//                               </div>
+//                             </div>
+//                             <div className="flex items-start gap-2">
+//                               <div className="w-2 h-2 bg-amber-500 rounded-full mt-2 flex-shrink-0"></div>
+//                               <div>
+//                                 <span className="font-medium text-slate-700">Promoter Activity:</span>
+//                                 <span className="text-slate-600 ml-1">
+//                                   {(
+//                                     ((symptomData.plot_data.promoter?.length || 0) /
+//                                       ((symptomData.plot_data.inhibitor?.length || 0) +
+//                                         (symptomData.plot_data.promoter?.length || 0))) *
+//                                     100
+//                                   ).toFixed(1)}
+//                                   % of biomarkers show promotional effects
+//                                 </span>
+//                               </div>
+//                             </div>
+//                           </div>
+//                         </div>
+//                       </CardContent>
 //                     </Card>
-//                   ))}
+//                   </div>
+//                 ) : (
+//                   <div className="text-center py-20 bg-gradient-to-br from-slate-50 to-gray-100 rounded-lg border-2 border-dashed border-slate-300">
+//                     <div className="max-w-md mx-auto">
+//                       <BarChart3 className="h-20 w-20 mx-auto mb-6 text-slate-400" />
+//                       <h3 className="text-xl font-semibold text-slate-600 mb-3">No Plot Data Available</h3>
+//                       <p className="text-slate-500 leading-relaxed">
+//                         The analysis data does not contain plot information for this symptom. Please ensure the data
+//                         includes biomarker associations.
+//                       </p>
+//                     </div>
+//                   </div>
+//                 )}
 //               </div>
 //             </div>
 //           </TabsContent>
@@ -654,38 +1012,38 @@
 //           <div className="space-y-1">
 //             <div className="flex justify-between">
 //               <span>Total Score:</span>
-//               <span className="font-semibold">{tooltip.total_avg.toFixed(4)}</span>
+//               <span className="font-semibold">{(tooltip.total_avg || 0).toFixed(4)}</span>
 //             </div>
-//             {tooltip.avg_inhibitor !== null && (
+//             {tooltip.avg_inhibitor !== null && tooltip.avg_inhibitor !== undefined && (
 //               <div className="flex items-center justify-between">
 //                 <div className="flex items-center gap-2">
 //                   <div className="w-3 h-3 bg-green-500 rounded"></div>
 //                   <span>Inhibitor:</span>
 //                 </div>
 //                 <span className="font-semibold">
-//                   {tooltip.avg_inhibitor.toFixed(4)} ({tooltip.percent_inhibitor.toFixed(1)}%)
+//                   {(tooltip.avg_inhibitor || 0).toFixed(4)} ({(tooltip.percent_inhibitor || 0).toFixed(1)}%)
 //                 </span>
 //               </div>
 //             )}
-//             {tooltip.avg_promoter !== null && (
+//             {tooltip.avg_promoter !== null && tooltip.avg_promoter !== undefined && (
 //               <div className="flex items-center justify-between">
 //                 <div className="flex items-center gap-2">
 //                   <div className="w-3 h-3 bg-yellow-500 rounded"></div>
 //                   <span>Promoter:</span>
 //                 </div>
 //                 <span className="font-semibold">
-//                   {tooltip.avg_promoter.toFixed(4)} ({tooltip.percent_promoter.toFixed(1)}%)
+//                   {(tooltip.avg_promoter || 0).toFixed(4)} ({(tooltip.percent_promoter || 0).toFixed(1)}%)
 //                 </span>
 //               </div>
 //             )}
-//             {tooltip.avg_unknown !== null && (
+//             {tooltip.avg_unknown !== null && tooltip.avg_unknown !== undefined && (
 //               <div className="flex items-center justify-between">
 //                 <div className="flex items-center gap-2">
 //                   <div className="w-3 h-3 bg-gray-500 rounded"></div>
 //                   <span>Unknown:</span>
 //                 </div>
 //                 <span className="font-semibold">
-//                   {tooltip.avg_unknown.toFixed(4)} ({tooltip.percent_unknown.toFixed(1)}%)
+//                   {(tooltip.avg_unknown || 0).toFixed(4)} ({(tooltip.percent_unknown || 0).toFixed(1)}%)
 //                 </span>
 //               </div>
 //             )}
@@ -713,7 +1071,7 @@
 //             <span className="font-medium">No Data</span>
 //           </div>
 //           <div className="text-slate-500">
-//             <Info className="w-4 h-4 inline mr-1" />
+//             <Info className="h-4 w-4 inline mr-1" />
 //             Click diseases/circles to analyze • Hover for details
 //           </div>
 //         </div>
@@ -721,6 +1079,7 @@
 //     </div>
 //   )
 // }
+
 
 
 "use client"
@@ -731,11 +1090,68 @@ import { Card } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
-import { X, Info, TrendingUp, TrendingDown, Activity, HelpCircle, BarChart3, ZoomIn, ZoomOut } from "lucide-react"
+import {
+  X,
+  Info,
+  TrendingUp,
+  TrendingDown,
+  Activity,
+  HelpCircle,
+  BarChart3,
+  ZoomIn,
+  ZoomOut,
+  Loader2,
+} from "lucide-react"
 import { Bar, BarChart, CartesianGrid, XAxis, YAxis, Tooltip, Legend } from "recharts"
 import { CardHeader, CardTitle, CardDescription, CardContent } from "@/components/ui/card"
 
 export default function SymptomInfographic() {
+  // Handle API response with NaN values
+  const handleApiResponse = async (response) => {
+    try {
+      // Get the raw text from the response
+      const text = await response.text()
+
+      // Replace NaN with null in the text before parsing
+      const cleanedText = text.replace(/:\s*NaN/g, ": null")
+
+      // Parse the cleaned JSON
+      const data = JSON.parse(cleanedText)
+
+      // Extract the result array if it exists
+      const resultArray = data.result || data
+
+      // Filter out entries with mostly empty values
+      return resultArray.filter((item) => {
+        // Check if the item has meaningful data
+        return (
+          item.Insights ||
+          (item.Direction && item.Direction !== "null") ||
+          (item["Quantified Changes"] && item["Quantified Changes"] !== "null")
+        )
+      })
+    } catch (error) {
+      console.error("Error processing API response:", error)
+      throw new Error(`Failed to process API response: ${error.message}`)
+    }
+  }
+
+  // Process the API data to filter out N/A entries
+  const processApiData = (data) => {
+    if (!Array.isArray(data)) return []
+
+    // Filter out entries where most fields are N/A or null
+    return data.filter((item) => {
+      // Check if the item has meaningful data
+      const hasInsights = item.Insights && item.Insights !== "N/A" && item.Insights !== "NA"
+      const hasDirection = item.Direction && item.Direction !== "N/A" && item.Direction !== "NA"
+      const hasChanges =
+        item.Quantified_Changes && item.Quantified_Changes !== "N/A" && item.Quantified_Changes !== "NA"
+
+      return hasInsights || hasDirection || hasChanges
+    })
+  }
+
   const location = useLocation()
   const { symptomData, disease } = location.state || {}
   const [tooltip, setTooltip] = useState(null)
@@ -745,7 +1161,11 @@ export default function SymptomInfographic() {
   const [circleDetails, setCircleDetails] = useState(null)
   const [activeTab, setActiveTab] = useState("matrix")
   const [zoomLevel, setZoomLevel] = useState(1)
+  const [apiData, setApiData] = useState(null)
+  const [isLoading, setIsLoading] = useState(false)
+  const [apiError, setApiError] = useState(null)
   const svgContainerRef = useRef(null)
+  const detailsSectionRef = useRef(null)
 
   // Fixed circle size
   const CIRCLE_RADIUS = 16
@@ -773,6 +1193,18 @@ export default function SymptomInfographic() {
       container.scrollLeft = (width * zoomLevel - container.clientWidth) / 2
     }
   }, [width, zoomLevel])
+
+  // Auto-scroll to details section when details are shown
+  useEffect(() => {
+    if ((selectedDisease && diseaseDetails) || (selectedCircle && circleDetails)) {
+      setTimeout(() => {
+        detailsSectionRef.current?.scrollIntoView({
+          behavior: "smooth",
+          block: "start",
+        })
+      }, 100)
+    }
+  }, [selectedDisease, diseaseDetails, selectedCircle, circleDetails])
 
   // Show error message if no data is available
   if (!symptomData) {
@@ -820,13 +1252,13 @@ export default function SymptomInfographic() {
     setTooltip({
       biomarker,
       disease,
-      total_avg: datum.total_avg,
-      avg_inhibitor: datum.avg_inhibitor,
-      avg_promoter: datum.avg_promoter,
-      avg_unknown: datum.avg_unknown,
-      percent_inhibitor: datum.percent_inhibitor,
-      percent_promoter: datum.percent_promoter,
-      percent_unknown: datum.percent_unknown,
+      total_avg: datum.total_avg || 0,
+      avg_inhibitor: datum.avg_inhibitor || 0,
+      avg_promoter: datum.avg_promoter || 0,
+      avg_unknown: datum.avg_unknown || 0,
+      percent_inhibitor: datum.percent_inhibitor || 0,
+      percent_promoter: datum.percent_promoter || 0,
+      percent_unknown: datum.percent_unknown || 0,
       x: rect.left + rect.width / 2,
       y: rect.top - 10,
     })
@@ -838,6 +1270,12 @@ export default function SymptomInfographic() {
 
   // Handle disease click
   const handleDiseaseClick = (disease) => {
+    // Clear circle selection when selecting a disease
+    setSelectedCircle(null)
+    setCircleDetails(null)
+    setApiData(null)
+    setApiError(null)
+
     setSelectedDisease(disease)
 
     // Calculate statistics for this disease across all biomarkers
@@ -907,25 +1345,69 @@ export default function SymptomInfographic() {
     setDiseaseDetails(diseaseStats)
   }
 
-  // Handle circle click
-  const handleCircleClick = (biomarker, disease, datum) => {
+  // Handle circle click with API call
+  const handleCircleClick = async (biomarker, disease, datum) => {
     if (!datum) return
+
+    // Clear disease selection when selecting a circle
+    setSelectedDisease(null)
+    setDiseaseDetails(null)
 
     setSelectedCircle({ biomarker, disease })
     setCircleDetails({
       biomarker,
       disease,
       symptom,
-      ...datum,
+      total_avg: datum.total_avg || 0,
+      avg_inhibitor: datum.avg_inhibitor || 0,
+      avg_promoter: datum.avg_promoter || 0,
+      avg_unknown: datum.avg_unknown || 0,
+      percent_inhibitor: datum.percent_inhibitor || 0,
+      percent_promoter: datum.percent_promoter || 0,
+      percent_unknown: datum.percent_unknown || 0,
       // Additional analysis
       dominantType:
-        datum.percent_inhibitor > datum.percent_promoter && datum.percent_inhibitor > datum.percent_unknown
+        (datum.percent_inhibitor || 0) > (datum.percent_promoter || 0) &&
+        (datum.percent_inhibitor || 0) > (datum.percent_unknown || 0)
           ? "Inhibitor"
-          : datum.percent_promoter > datum.percent_unknown
+          : (datum.percent_promoter || 0) > (datum.percent_unknown || 0)
             ? "Promoter"
             : "Unknown",
-      confidence: Math.max(datum.percent_inhibitor, datum.percent_promoter, datum.percent_unknown),
+      confidence: Math.max(datum.percent_inhibitor || 0, datum.percent_promoter || 0, datum.percent_unknown || 0),
     })
+
+    // Make API call to get additional data
+    setIsLoading(true)
+    setApiData(null)
+    setApiError(null)
+
+    try {
+      const response = await fetch(`${import.meta.env.VITE_API_URL}/ligmaballs`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          disease: disease,
+          biomarker: biomarker,
+          symptom_data: symptomData,
+        }),
+      })
+
+      if (!response.ok) {
+        throw new Error(`API request failed with status ${response.status}`)
+      }
+
+      // Use the new handler function
+      const processedData = await handleApiResponse(response)
+      console.log("Processed API data:", processedData)
+      setApiData(processedData)
+    } catch (error) {
+      console.error("Error fetching data from API:", error)
+      setApiError(error.message || "Failed to fetch data from API")
+    } finally {
+      setIsLoading(false)
+    }
   }
 
   // Handle zoom controls
@@ -1000,10 +1482,13 @@ export default function SymptomInfographic() {
           </div>
 
           <TabsContent value="matrix" className="mt-0">
-            <div className="flex h-[calc(100vh-220px)]">
+            <div className="space-y-4">
               {/* Main Visualization */}
-              <div className="flex-1 overflow-hidden">
-                <div className="border border-slate-200 rounded-lg bg-white shadow-sm overflow-auto h-full">
+              <div className="overflow-hidden">
+                <div
+                  className="border border-slate-200 rounded-lg bg-white shadow-sm overflow-auto"
+                  style={{ height: `${VISUALIZATION_HEIGHT}px` }}
+                >
                   <div ref={svgContainerRef} className="overflow-auto" style={{ height: "100%", width: "100%" }}>
                     <svg
                       width={width * zoomLevel}
@@ -1140,9 +1625,9 @@ export default function SymptomInfographic() {
                 </div>
               </div>
 
-              {/* Side Panel for Disease/Circle Details */}
+              {/* Details Panel Below Visualization */}
               {(selectedDisease && diseaseDetails) || (selectedCircle && circleDetails) ? (
-                <div className="w-96 bg-white border-l border-slate-200 overflow-auto">
+                <div ref={detailsSectionRef} className="bg-white border border-slate-200 rounded-lg shadow-sm">
                   <div className="p-6">
                     <div className="flex items-center justify-between mb-4">
                       <h3 className="text-lg font-bold text-slate-800">
@@ -1156,6 +1641,8 @@ export default function SymptomInfographic() {
                           setDiseaseDetails(null)
                           setSelectedCircle(null)
                           setCircleDetails(null)
+                          setApiData(null)
+                          setApiError(null)
                         }}
                       >
                         <X className="h-4 w-4" />
@@ -1164,50 +1651,52 @@ export default function SymptomInfographic() {
 
                     {/* Disease Details */}
                     {selectedDisease && diseaseDetails && (
-                      <div className="space-y-4">
-                        <div>
-                          <h4 className="font-semibold text-slate-700 mb-2">{selectedDisease}</h4>
-                          <div className="grid grid-cols-2 gap-3 text-sm">
-                            <div className="bg-slate-50 p-3 rounded-lg">
-                              <div className="text-slate-500">Coverage</div>
-                              <div className="font-semibold">
-                                {diseaseDetails.biomarkersWithData}/{diseaseDetails.totalBiomarkers}
+                      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                        <div className="space-y-4">
+                          <div>
+                            <h4 className="font-semibold text-slate-700 mb-2">{selectedDisease}</h4>
+                            <div className="grid grid-cols-2 gap-3 text-sm">
+                              <div className="bg-slate-50 p-3 rounded-lg">
+                                <div className="text-slate-500">Coverage</div>
+                                <div className="font-semibold">
+                                  {diseaseDetails.biomarkersWithData}/{diseaseDetails.totalBiomarkers}
+                                </div>
                               </div>
-                            </div>
-                            <div className="bg-slate-50 p-3 rounded-lg">
-                              <div className="text-slate-500">Avg Score</div>
-                              <div className="font-semibold">{diseaseDetails.avgTotalScore.toFixed(3)}</div>
-                            </div>
-                          </div>
-                        </div>
-
-                        <div className="space-y-3">
-                          <div className="flex items-center gap-2 p-3 bg-green-50 rounded-lg">
-                            <TrendingDown className="h-4 w-4 text-green-600" />
-                            <div className="flex-1">
-                              <div className="text-sm text-green-700 font-medium">Avg Inhibitor Score</div>
-                              <div className="text-lg font-bold text-green-800">
-                                {diseaseDetails.avgInhibitorScore.toFixed(3)}
+                              <div className="bg-slate-50 p-3 rounded-lg">
+                                <div className="text-slate-500">Avg Score</div>
+                                <div className="font-semibold">{diseaseDetails.avgTotalScore.toFixed(3)}</div>
                               </div>
                             </div>
                           </div>
 
-                          <div className="flex items-center gap-2 p-3 bg-yellow-50 rounded-lg">
-                            <TrendingUp className="h-4 w-4 text-yellow-600" />
-                            <div className="flex-1">
-                              <div className="text-sm text-yellow-700 font-medium">Avg Promoter Score</div>
-                              <div className="text-lg font-bold text-yellow-800">
-                                {diseaseDetails.avgPromoterScore.toFixed(3)}
+                          <div className="space-y-3">
+                            <div className="flex items-center gap-2 p-3 bg-green-50 rounded-lg">
+                              <TrendingDown className="h-4 w-4 text-green-600" />
+                              <div className="flex-1">
+                                <div className="text-sm text-green-700 font-medium">Avg Inhibitor Score</div>
+                                <div className="text-lg font-bold text-green-800">
+                                  {diseaseDetails.avgInhibitorScore.toFixed(3)}
+                                </div>
                               </div>
                             </div>
-                          </div>
 
-                          <div className="flex items-center gap-2 p-3 bg-gray-50 rounded-lg">
-                            <HelpCircle className="h-4 w-4 text-gray-600" />
-                            <div className="flex-1">
-                              <div className="text-sm text-gray-700 font-medium">Avg Unknown Score</div>
-                              <div className="text-lg font-bold text-gray-800">
-                                {diseaseDetails.avgUnknownScore.toFixed(3)}
+                            <div className="flex items-center gap-2 p-3 bg-yellow-50 rounded-lg">
+                              <TrendingUp className="h-4 w-4 text-yellow-600" />
+                              <div className="flex-1">
+                                <div className="text-sm text-yellow-700 font-medium">Avg Promoter Score</div>
+                                <div className="text-lg font-bold text-yellow-800">
+                                  {diseaseDetails.avgPromoterScore.toFixed(3)}
+                                </div>
+                              </div>
+                            </div>
+
+                            <div className="flex items-center gap-2 p-3 bg-gray-50 rounded-lg">
+                              <HelpCircle className="h-4 w-4 text-gray-600" />
+                              <div className="flex-1">
+                                <div className="text-sm text-gray-700 font-medium">Avg Unknown Score</div>
+                                <div className="text-lg font-bold text-gray-800">
+                                  {diseaseDetails.avgUnknownScore.toFixed(3)}
+                                </div>
                               </div>
                             </div>
                           </div>
@@ -1235,63 +1724,174 @@ export default function SymptomInfographic() {
 
                     {/* Circle Details */}
                     {selectedCircle && circleDetails && (
-                      <div className="space-y-4">
-                        <div>
-                          <h4 className="font-semibold text-slate-700 mb-1">
-                            {circleDetails.biomarker.replace(/_/g, " ")}
-                          </h4>
-                          <p className="text-sm text-slate-600 mb-3">{circleDetails.disease}</p>
+                      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                        <div className="space-y-4">
+                          <div>
+                            <h4 className="font-semibold text-slate-700 mb-1">
+                              {circleDetails.biomarker.replace(/_/g, " ")}
+                            </h4>
+                            <p className="text-sm text-slate-600 mb-3">{circleDetails.disease}</p>
 
-                          <div className="bg-blue-50 p-3 rounded-lg mb-4">
-                            <div className="text-sm text-blue-700 font-medium">Dominant Effect</div>
-                            <div className="text-lg font-bold text-blue-800">
-                              {circleDetails.dominantType} ({circleDetails.confidence.toFixed(1)}%)
+                            <div className="bg-blue-50 p-3 rounded-lg mb-4">
+                              <div className="text-sm text-blue-700 font-medium">Dominant Effect</div>
+                              <div className="text-lg font-bold text-blue-800">
+                                {circleDetails.dominantType} ({(circleDetails.confidence || 0).toFixed(1)}%)
+                              </div>
                             </div>
+                          </div>
+
+                          <div className="space-y-3">
+                            {circleDetails.avg_inhibitor !== null && circleDetails.avg_inhibitor !== undefined && (
+                              <div className="p-3 bg-green-50 border border-green-200 rounded-lg">
+                                <div className="text-sm font-medium text-green-700">Antagonist Effect</div>
+                                <div className="text-lg font-bold text-green-800">
+                                  {(circleDetails.avg_inhibitor || 0).toFixed(4)} (
+                                  {(circleDetails.percent_inhibitor || 0).toFixed(1)}%)
+                                </div>
+                              </div>
+                            )}
+
+                            {circleDetails.avg_promoter !== null && circleDetails.avg_promoter !== undefined && (
+                              <div className="p-3 bg-yellow-50 border border-yellow-200 rounded-lg">
+                                <div className="text-sm font-medium text-yellow-700">Agonist Effect</div>
+                                <div className="text-lg font-bold text-yellow-800">
+                                  {(circleDetails.avg_promoter || 0).toFixed(4)} (
+                                  {(circleDetails.percent_promoter || 0).toFixed(1)}%)
+                                </div>
+                              </div>
+                            )}
+
+                            {circleDetails.avg_unknown !== null && circleDetails.avg_unknown !== undefined && (
+                              <div className="p-3 bg-gray-50 border border-gray-200 rounded-lg">
+                                <div className="text-sm font-medium text-gray-700">Unknown Effect</div>
+                                <div className="text-lg font-bold text-gray-800">
+                                  {(circleDetails.avg_unknown || 0).toFixed(4)} (
+                                  {(circleDetails.percent_unknown || 0).toFixed(1)}%)
+                                </div>
+                              </div>
+                            )}
                           </div>
                         </div>
 
-                        <div className="space-y-3">
+                        <div className="space-y-4">
+                          <div className="p-3 bg-blue-50 rounded-lg">
+                            <h5 className="font-medium text-blue-800 mb-2">Clinical Significance</h5>
+                            <p className="text-sm text-blue-700">
+                              This {circleDetails.dominantType.toLowerCase()} relationship between{" "}
+                              <strong>{circleDetails.biomarker.replace(/_/g, " ")}</strong> and{" "}
+                              <strong>{circleDetails.disease}</strong> in the context of{" "}
+                              <strong>{circleDetails.symptom}</strong> suggests potential therapeutic targets.
+                            </p>
+                          </div>
+
+                          {/* API Data Section */}
                           <div className="p-3 bg-slate-50 rounded-lg">
-                            <div className="text-sm text-slate-600">Total Average Score</div>
-                            <div className="text-xl font-bold text-slate-800">{circleDetails.total_avg.toFixed(4)}</div>
+                            <h5 className="font-medium text-slate-800 mb-2 flex items-center justify-between">
+                              <span>Additional Research Data</span>
+                              {isLoading && <Loader2 className="h-4 w-4 animate-spin text-blue-600" />}
+                            </h5>
+
+                            {isLoading && (
+                              <div className="text-center py-4">
+                                <Loader2 className="h-8 w-8 animate-spin mx-auto text-blue-600 mb-2" />
+                                <p className="text-sm text-slate-600">Loading additional data...</p>
+                              </div>
+                            )}
+
+                            {apiError && (
+                              <div className="p-3 bg-red-50 border border-red-200 rounded-lg">
+                                <p className="text-sm text-red-700">
+                                  <span className="font-medium">Error:</span> {apiError}
+                                </p>
+                              </div>
+                            )}
+
+                            {!isLoading && !apiError && (
+                              <div className="space-y-4">
+                                {apiData && apiData.length > 0 ? (
+                                  apiData.map((item, index) => {
+                                    // Skip items with no meaningful data
+                                    if (!item.Insights && !item.Direction && !item["Quantified Changes"]) {
+                                      return null
+                                    }
+
+                                    return (
+                                      <Card key={index} className="overflow-hidden border-slate-200">
+                                        <CardHeader className="bg-slate-50 p-4">
+                                          <CardTitle className="text-base font-medium">
+                                            {item.Matched_Biomarker || "Cyclooxygenase"} Analysis
+                                          </CardTitle>
+                                          {item.Direction && (
+                                            <Badge
+                                              variant={item.Direction?.includes("Increase") ? "warning" : "success"}
+                                              className="mt-1"
+                                            >
+                                              {item.Direction}
+                                            </Badge>
+                                          )}
+                                        </CardHeader>
+                                        <CardContent className="p-4 space-y-3">
+                                          {/* Insights - Always show if available */}
+                                          {item.Insights && (
+                                            <div>
+                                              <h6 className="text-sm font-semibold text-slate-700 mb-1">
+                                                Key Insights
+                                              </h6>
+                                              <p className="text-sm text-slate-600">{item.Insights}</p>
+                                            </div>
+                                          )}
+
+                                          {/* Quantified Changes */}
+                                          {item["Quantified Changes"] && (
+                                            <div>
+                                              <h6 className="text-sm font-semibold text-slate-700 mb-1">
+                                                Quantified Changes
+                                              </h6>
+                                              <p className="text-sm text-slate-600">{item["Quantified Changes"]}</p>
+                                            </div>
+                                          )}
+
+                                          {/* Comparison to Reference */}
+                                          {item["Comparison to Reference"] && (
+                                            <div>
+                                              <h6 className="text-sm font-semibold text-slate-700 mb-1">
+                                                Comparison to Reference
+                                              </h6>
+                                              <p className="text-sm text-slate-600">
+                                                {item["Comparison to Reference"]}
+                                              </p>
+                                            </div>
+                                          )}
+
+                                          {/* Reference Point */}
+                                          {item["Reference Point"] && (
+                                            <div>
+                                              <h6 className="text-sm font-semibold text-slate-700 mb-1">
+                                                Reference Point
+                                              </h6>
+                                              <p className="text-sm text-slate-600">{item["Reference Point"]}</p>
+                                            </div>
+                                          )}
+                                        </CardContent>
+                                      </Card>
+                                    )
+                                  })
+                                ) : (
+                                  <div className="text-center p-4 bg-slate-50 rounded-lg">
+                                    <p className="text-slate-600">
+                                      No relevant data available for this biomarker-disease combination.
+                                    </p>
+                                  </div>
+                                )}
+                              </div>
+                            )}
+
+                            {!isLoading && !apiError && !apiData && (
+                              <p className="text-sm text-slate-600">
+                                Additional research data will appear here once loaded.
+                              </p>
+                            )}
                           </div>
-
-                          {circleDetails.avg_inhibitor !== null && (
-                            <div className="p-3 bg-green-50 border border-green-200 rounded-lg">
-                              <div className="text-sm font-medium text-green-700">Inhibitor Effect</div>
-                              <div className="text-lg font-bold text-green-800">
-                                {circleDetails.avg_inhibitor.toFixed(4)} ({circleDetails.percent_inhibitor.toFixed(1)}%)
-                              </div>
-                            </div>
-                          )}
-
-                          {circleDetails.avg_promoter !== null && (
-                            <div className="p-3 bg-yellow-50 border border-yellow-200 rounded-lg">
-                              <div className="text-sm font-medium text-yellow-700">Promoter Effect</div>
-                              <div className="text-lg font-bold text-yellow-800">
-                                {circleDetails.avg_promoter.toFixed(4)} ({circleDetails.percent_promoter.toFixed(1)}%)
-                              </div>
-                            </div>
-                          )}
-
-                          {circleDetails.avg_unknown !== null && (
-                            <div className="p-3 bg-gray-50 border border-gray-200 rounded-lg">
-                              <div className="text-sm font-medium text-gray-700">Unknown Effect</div>
-                              <div className="text-lg font-bold text-gray-800">
-                                {circleDetails.avg_unknown.toFixed(4)} ({circleDetails.percent_unknown.toFixed(1)}%)
-                              </div>
-                            </div>
-                          )}
-                        </div>
-
-                        <div className="p-3 bg-blue-50 rounded-lg">
-                          <h5 className="font-medium text-blue-800 mb-2">Clinical Significance</h5>
-                          <p className="text-sm text-blue-700">
-                            This {circleDetails.dominantType.toLowerCase()} relationship between{" "}
-                            <strong>{circleDetails.biomarker.replace(/_/g, " ")}</strong> and{" "}
-                            <strong>{circleDetails.disease}</strong> in the context of{" "}
-                            <strong>{circleDetails.symptom}</strong> suggests potential therapeutic targets.
-                          </p>
                         </div>
                       </div>
                     )}
@@ -1302,177 +1902,320 @@ export default function SymptomInfographic() {
           </TabsContent>
 
           <TabsContent value="plots" className="mt-0">
-            <div className="bg-white rounded-lg border border-slate-200 p-6">
-              <h3 className="text-xl font-bold text-slate-800 mb-6">Statistical Analysis Plots</h3>
+            <div className="space-y-6">
+              <div className="bg-white rounded-lg border border-slate-200 p-6 shadow-sm">
+                <div className="flex items-center justify-between mb-6">
+                  <div>
+                    <h3 className="text-2xl font-bold text-slate-800">Statistical Analysis Plots</h3>
+                    <p className="text-slate-600 mt-1">Interactive biomarker analysis for "{symptom}"</p>
+                  </div>
+                  <Badge variant="secondary" className="text-sm">
+                    {(symptomData?.plot_data?.inhibitor?.length || 0) + (symptomData?.plot_data?.promoter?.length || 0)}{" "}
+                    Total Biomarkers
+                  </Badge>
+                </div>
 
-              {symptomData?.plot_data ? (
-                <div className="space-y-8">
-                  {/* Inhibitor Chart */}
-                  {symptomData.plot_data.inhibitor && symptomData.plot_data.inhibitor.length > 0 && (
-                    <Card>
-                      <CardHeader>
-                        <CardTitle className="flex items-center gap-2">
-                          <TrendingDown className="h-5 w-5 text-green-600" />
-                          Inhibitor Biomarkers Analysis
-                        </CardTitle>
-                        <CardDescription>Biomarker inhibition scores across diseases for "{symptom}"</CardDescription>
-                      </CardHeader>
-                      <CardContent>
-                        <div className="h-[400px] w-full">
-                          <BarChart
-                            width={800}
-                            height={400}
-                            data={symptomData.plot_data.inhibitor.map((item) => {
-                              const chartItem = {
-                                biomarker: item.biomarker.replace(/_/g, " ").substring(0, 15) + "...",
-                              }
-                              item.diseases.forEach((disease) => {
-                                chartItem[disease.disease.replace(/\s+/g, "_")] = disease.score
-                              })
-                              return chartItem
-                            })}
-                            margin={{ top: 20, right: 30, left: 20, bottom: 60 }}
-                            className="w-full"
-                          >
-                            <CartesianGrid strokeDasharray="3 3" />
-                            <XAxis dataKey="biomarker" angle={-45} textAnchor="end" height={80} fontSize={12} />
-                            <YAxis />
-                            <Tooltip
-                              content={({ active, payload, label }) => {
-                                if (active && payload && payload.length) {
-                                  return (
-                                    <div className="bg-white p-3 border border-gray-200 rounded-lg shadow-lg">
-                                      <p className="font-semibold">{label}</p>
-                                      {payload.map((entry, index) => (
-                                        <p key={index} style={{ color: entry.color }}>
-                                          {entry.dataKey.replace(/_/g, " ")}: {entry.value?.toFixed(4)}
-                                        </p>
-                                      ))}
-                                    </div>
-                                  )
-                                }
-                                return null
+                {symptomData?.plot_data ? (
+                  <div className="space-y-8">
+                    {/* Inhibitor Chart */}
+                    {symptomData.plot_data.inhibitor && symptomData.plot_data.inhibitor.length > 0 && (
+                      <Card className="overflow-hidden border-green-200 bg-gradient-to-br from-green-50 to-emerald-50">
+                        <CardHeader className="bg-gradient-to-r from-green-600 to-emerald-600 text-white">
+                          <CardTitle className="flex items-center gap-3 text-xl">
+                            <div className="p-2 bg-white/20 rounded-lg">
+                              <TrendingDown className="h-6 w-6" />
+                            </div>
+                            <div>
+                              <div>Inhibitor Biomarkers Analysis</div>
+                              <div className="text-green-100 text-sm font-normal mt-1">
+                                {symptomData.plot_data.inhibitor.length} biomarkers showing inhibitory effects
+                              </div>
+                            </div>
+                          </CardTitle>
+                        </CardHeader>
+                        <CardContent className="p-6">
+                          <div className="text-sm text-slate-500 mb-4 flex items-center justify-center">
+                            <Info className="h-4 w-4 mr-2" />
+                            <span>Scroll horizontally to view all data points</span>
+                          </div>
+                          <div className="w-full overflow-x-auto" style={{ height: "600px" }}>
+                            <div
+                              style={{
+                                minWidth: Math.max(1500, symptomData.plot_data.inhibitor.length * 80),
+                                height: "100%",
                               }}
-                            />
-                            <Legend />
-                            {diseases.map((disease, index) => (
-                              <Bar
-                                key={disease}
-                                dataKey={disease.replace(/\s+/g, "_")}
-                                stackId="inhibitor"
-                                fill={`hsl(${(index * 137.5) % 360}, 70%, 50%)`}
-                              />
-                            ))}
-                          </BarChart>
+                            >
+                              <BarChart
+                                width={Math.max(1500, symptomData.plot_data.inhibitor.length * 80)}
+                                height={550}
+                                data={symptomData.plot_data.inhibitor.map((item) => {
+                                  const chartItem = {
+                                    biomarker:
+                                      item.biomarker.replace(/_/g, " ").length > 20
+                                        ? item.biomarker.replace(/_/g, " ").substring(0, 20) + "..."
+                                        : item.biomarker.replace(/_/g, " "),
+                                    fullName: item.biomarker.replace(/_/g, " "),
+                                  }
+                                  item.diseases.forEach((disease) => {
+                                    chartItem[disease.disease.replace(/\s+/g, "_")] = disease.score
+                                  })
+                                  return chartItem
+                                })}
+                                margin={{ top: 30, right: 60, left: 40, bottom: 100 }}
+                              >
+                                <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
+                                <XAxis
+                                  dataKey="biomarker"
+                                  angle={-45}
+                                  textAnchor="end"
+                                  height={120}
+                                  fontSize={12}
+                                  stroke="#475569"
+                                  tick={{ fill: "#475569" }}
+                                  interval={0}
+                                  tickMargin={10}
+                                />
+                                <YAxis stroke="#475569" tick={{ fill: "#475569" }} fontSize={12} />
+                                <Tooltip
+                                  content={({ active, payload, label }) => {
+                                    if (active && payload && payload.length) {
+                                      const data = payload[0]?.payload
+                                      return (
+                                        <div className="bg-white p-4 border border-green-200 rounded-lg shadow-xl">
+                                          <p className="font-semibold text-green-800 mb-2">{data?.fullName || label}</p>
+                                          <div className="space-y-1">
+                                            {payload.map((entry, index) => (
+                                              <div key={index} className="flex items-center justify-between gap-4">
+                                                <div className="flex items-center gap-2">
+                                                  <div
+                                                    className="w-3 h-3 rounded"
+                                                    style={{ backgroundColor: entry.color }}
+                                                  />
+                                                  <span className="text-sm text-slate-700">
+                                                    {entry.dataKey.replace(/_/g, " ")}:
+                                                  </span>
+                                                </div>
+                                                <span className="font-semibold text-slate-900">
+                                                  {entry.value?.toFixed(4)}
+                                                </span>
+                                              </div>
+                                            ))}
+                                          </div>
+                                        </div>
+                                      )
+                                    }
+                                    return null
+                                  }}
+                                />
+                                <Legend wrapperStyle={{ paddingTop: "20px" }} iconType="rect" />
+                                {diseases.map((disease, index) => (
+                                  <Bar
+                                    key={disease}
+                                    dataKey={disease.replace(/\s+/g, "_")}
+                                    stackId="inhibitor"
+                                    fill={`hsl(${120 + index * 25}, 65%, ${45 + (index % 3) * 10}%)`}
+                                    radius={index === diseases.length - 1 ? [4, 4, 0, 0] : [0, 0, 0, 0]}
+                                  />
+                                ))}
+                              </BarChart>
+                            </div>
+                          </div>
+                        </CardContent>
+                      </Card>
+                    )}
+
+                    {/* Promoter Chart */}
+                    {symptomData.plot_data.promoter && symptomData.plot_data.promoter.length > 0 && (
+                      <Card className="overflow-hidden border-amber-200 bg-gradient-to-br from-amber-50 to-yellow-50">
+                        <CardHeader className="bg-gradient-to-r from-amber-600 to-yellow-600 text-white">
+                          <CardTitle className="flex items-center gap-3 text-xl">
+                            <div className="p-2 bg-white/20 rounded-lg">
+                              <TrendingUp className="h-6 w-6" />
+                            </div>
+                            <div>
+                              <div>Promoter Biomarkers Analysis</div>
+                              <div className="text-amber-100 text-sm font-normal mt-1">
+                                {symptomData.plot_data.promoter.length} biomarkers showing promotional effects
+                              </div>
+                            </div>
+                          </CardTitle>
+                        </CardHeader>
+                        <CardContent className="p-6">
+                          <div className="text-sm text-slate-500 mb-4 flex items-center justify-center">
+                            <Info className="h-4 w-4 mr-2" />
+                            <span>Scroll horizontally to view all data points</span>
+                          </div>
+                          <div className="w-full overflow-x-auto" style={{ height: "600px" }}>
+                            <div
+                              style={{
+                                minWidth: Math.max(1500, symptomData.plot_data.promoter.length * 80),
+                                height: "100%",
+                              }}
+                            >
+                              <BarChart
+                                width={Math.max(1500, symptomData.plot_data.promoter.length * 80)}
+                                height={550}
+                                data={symptomData.plot_data.promoter.map((item) => {
+                                  const chartItem = {
+                                    biomarker:
+                                      item.biomarker.replace(/_/g, " ").length > 20
+                                        ? item.biomarker.replace(/_/g, " ").substring(0, 20) + "..."
+                                        : item.biomarker.replace(/_/g, " "),
+                                    fullName: item.biomarker.replace(/_/g, " "),
+                                  }
+                                  item.diseases.forEach((disease) => {
+                                    chartItem[disease.disease.replace(/\s+/g, "_")] = disease.score
+                                  })
+                                  return chartItem
+                                })}
+                                margin={{ top: 30, right: 60, left: 40, bottom: 100 }}
+                                className="w-full"
+                              >
+                                <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
+                                <XAxis
+                                  dataKey="biomarker"
+                                  angle={-45}
+                                  textAnchor="end"
+                                  height={120}
+                                  fontSize={12}
+                                  stroke="#475569"
+                                  tick={{ fill: "#475569" }}
+                                  interval={0}
+                                  tickMargin={10}
+                                />
+                                <YAxis stroke="#475569" tick={{ fill: "#475569" }} fontSize={12} />
+                                <Tooltip
+                                  content={({ active, payload, label }) => {
+                                    if (active && payload && payload.length) {
+                                      const data = payload[0]?.payload
+                                      return (
+                                        <div className="bg-white p-4 border border-amber-200 rounded-lg shadow-xl">
+                                          <p className="font-semibold text-amber-800 mb-2">{data?.fullName || label}</p>
+                                          <div className="space-y-1">
+                                            {payload.map((entry, index) => (
+                                              <div key={index} className="flex items-center justify-between gap-4">
+                                                <div className="flex items-center gap-2">
+                                                  <div
+                                                    className="w-3 h-3 rounded"
+                                                    style={{ backgroundColor: entry.color }}
+                                                  />
+                                                  <span className="text-sm text-slate-700">
+                                                    {entry.dataKey.replace(/_/g, " ")}:
+                                                  </span>
+                                                </div>
+                                                <span className="font-semibold text-slate-900">
+                                                  {entry.value?.toFixed(4)}
+                                                </span>
+                                              </div>
+                                            ))}
+                                          </div>
+                                        </div>
+                                      )
+                                    }
+                                    return null
+                                  }}
+                                />
+                                <Legend wrapperStyle={{ paddingTop: "20px" }} iconType="rect" />
+                                {diseases.map((disease, index) => (
+                                  <Bar
+                                    key={disease}
+                                    dataKey={disease.replace(/\s+/g, "_")}
+                                    stackId="promoter"
+                                    fill={`hsl(${45 + index * 25}, 70%, ${50 + (index % 3) * 8}%)`}
+                                    radius={index === diseases.length - 1 ? [4, 4, 0, 0] : [0, 0, 0, 0]}
+                                  />
+                                ))}
+                              </BarChart>
+                            </div>
+                          </div>
+                        </CardContent>
+                      </Card>
+                    )}
+
+                    {/* Enhanced Summary Statistics */}
+                    <Card className="bg-gradient-to-br from-slate-50 to-blue-50 border-slate-200">
+                      <CardHeader className="bg-gradient-to-r from-slate-700 to-blue-700 text-white">
+                        <CardTitle className="flex items-center gap-3">
+                          <BarChart3 className="h-6 w-6" />
+                          Summary Statistics
+                        </CardTitle>
+                        <CardDescription className="text-slate-200">
+                          Overview of biomarker associations for "{symptom}"
+                        </CardDescription>
+                      </CardHeader>
+                      <CardContent className="p-6">
+                        <div className="grid grid-cols-2 lg:grid-cols-4 gap-6">
+                          <div className="text-center p-6 bg-gradient-to-br from-green-100 to-emerald-100 rounded-xl border border-green-200 shadow-sm">
+                            <div className="text-3xl font-bold text-green-700 mb-2">
+                              {symptomData.plot_data.inhibitor?.length || 0}
+                            </div>
+                            <div className="text-sm font-medium text-green-600 mb-1">Inhibitor Biomarkers</div>
+                            <div className="text-xs text-green-500">Suppressive effects</div>
+                          </div>
+                          <div className="text-center p-6 bg-gradient-to-br from-amber-100 to-yellow-100 rounded-xl border border-amber-200 shadow-sm">
+                            <div className="text-3xl font-bold text-amber-700 mb-2">
+                              {symptomData.plot_data.promoter?.length || 0}
+                            </div>
+                            <div className="text-sm font-medium text-amber-600 mb-1">Promoter Biomarkers</div>
+                            <div className="text-xs text-amber-500">Enhancing effects</div>
+                          </div>
+                        </div>
+
+                        {/* Additional insights */}
+                        <div className="mt-6 p-4 bg-white rounded-lg border border-slate-200">
+                          <h4 className="font-semibold text-slate-700 mb-3 flex items-center gap-2">
+                            <Info className="h-4 w-4" />
+                            Key Insights
+                          </h4>
+                          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm">
+                            <div className="flex items-start gap-2">
+                              <div className="w-2 h-2 bg-green-500 rounded-full mt-2 flex-shrink-0"></div>
+                              <div>
+                                <span className="font-medium text-slate-700">Inhibitor Dominance:</span>
+                                <span className="text-slate-600 ml-1">
+                                  {(
+                                    ((symptomData.plot_data.inhibitor?.length || 0) /
+                                      ((symptomData.plot_data.inhibitor?.length || 0) +
+                                        (symptomData.plot_data.promoter?.length || 0))) *
+                                    100
+                                  ).toFixed(1)}
+                                  % of biomarkers show inhibitory effects
+                                </span>
+                              </div>
+                            </div>
+                            <div className="flex items-start gap-2">
+                              <div className="w-2 h-2 bg-amber-500 rounded-full mt-2 flex-shrink-0"></div>
+                              <div>
+                                <span className="font-medium text-slate-700">Promoter Activity:</span>
+                                <span className="text-slate-600 ml-1">
+                                  {(
+                                    ((symptomData.plot_data.promoter?.length || 0) /
+                                      ((symptomData.plot_data.inhibitor?.length || 0) +
+                                        (symptomData.plot_data.promoter?.length || 0))) *
+                                    100
+                                  ).toFixed(1)}
+                                  % of biomarkers show promotional effects
+                                </span>
+                              </div>
+                            </div>
+                          </div>
                         </div>
                       </CardContent>
                     </Card>
-                  )}
-
-                  {/* Promoter Chart */}
-                  {symptomData.plot_data.promoter && symptomData.plot_data.promoter.length > 0 && (
-                    <Card>
-                      <CardHeader>
-                        <CardTitle className="flex items-center gap-2">
-                          <TrendingUp className="h-5 w-5 text-yellow-600" />
-                          Promoter Biomarkers Analysis
-                        </CardTitle>
-                        <CardDescription>Biomarker promotion scores across diseases for "{symptom}"</CardDescription>
-                      </CardHeader>
-                      <CardContent>
-                        <div className="h-[400px] w-full">
-                          <BarChart
-                            width={800}
-                            height={400}
-                            data={symptomData.plot_data.promoter.map((item) => {
-                              const chartItem = {
-                                biomarker: item.biomarker.replace(/_/g, " ").substring(0, 15) + "...",
-                              }
-                              item.diseases.forEach((disease) => {
-                                chartItem[disease.disease.replace(/\s+/g, "_")] = disease.score
-                              })
-                              return chartItem
-                            })}
-                            margin={{ top: 20, right: 30, left: 20, bottom: 60 }}
-                            className="w-full"
-                          >
-                            <CartesianGrid strokeDasharray="3 3" />
-                            <XAxis dataKey="biomarker" angle={-45} textAnchor="end" height={80} fontSize={12} />
-                            <YAxis />
-                            <Tooltip
-                              content={({ active, payload, label }) => {
-                                if (active && payload && payload.length) {
-                                  return (
-                                    <div className="bg-white p-3 border border-gray-200 rounded-lg shadow-lg">
-                                      <p className="font-semibold">{label}</p>
-                                      {payload.map((entry, index) => (
-                                        <p key={index} style={{ color: entry.color }}>
-                                          {entry.dataKey.replace(/_/g, " ")}: {entry.value?.toFixed(4)}
-                                        </p>
-                                      ))}
-                                    </div>
-                                  )
-                                }
-                                return null
-                              }}
-                            />
-                            <Legend />
-                            {diseases.map((disease, index) => (
-                              <Bar
-                                key={disease}
-                                dataKey={disease.replace(/\s+/g, "_")}
-                                stackId="promoter"
-                                fill={`hsl(${(index * 137.5) % 360}, 70%, 50%)`}
-                              />
-                            ))}
-                          </BarChart>
-                        </div>
-                      </CardContent>
-                    </Card>
-                  )}
-
-                  {/* Summary Statistics */}
-                  <Card>
-                    <CardHeader>
-                      <CardTitle>Summary Statistics</CardTitle>
-                    </CardHeader>
-                    <CardContent>
-                      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                        <div className="text-center p-4 bg-green-50 rounded-lg">
-                          <div className="text-2xl font-bold text-green-700">
-                            {symptomData.plot_data.inhibitor?.length || 0}
-                          </div>
-                          <div className="text-sm text-green-600">Inhibitor Biomarkers</div>
-                        </div>
-                        <div className="text-center p-4 bg-yellow-50 rounded-lg">
-                          <div className="text-2xl font-bold text-yellow-700">
-                            {symptomData.plot_data.promoter?.length || 0}
-                          </div>
-                          <div className="text-sm text-yellow-600">Promoter Biomarkers</div>
-                        </div>
-                        <div className="text-center p-4 bg-blue-50 rounded-lg">
-                          <div className="text-2xl font-bold text-blue-700">
-                            {symptomData.plot_data.inhibitor?.reduce((sum, item) => sum + item.diseases.length, 0) || 0}
-                          </div>
-                          <div className="text-sm text-blue-600">Inhibitor Associations</div>
-                        </div>
-                        <div className="text-center p-4 bg-purple-50 rounded-lg">
-                          <div className="text-2xl font-bold text-purple-700">
-                            {symptomData.plot_data.promoter?.reduce((sum, item) => sum + item.diseases.length, 0) || 0}
-                          </div>
-                          <div className="text-sm text-purple-600">Promoter Associations</div>
-                        </div>
-                      </div>
-                    </CardContent>
-                  </Card>
-                </div>
-              ) : (
-                <div className="text-center py-16">
-                  <BarChart3 className="h-16 w-16 mx-auto mb-4 text-gray-400" />
-                  <h3 className="text-lg font-semibold text-gray-600 mb-2">No Plot Data Available</h3>
-                  <p className="text-gray-500">The analysis data does not contain plot information.</p>
-                </div>
-              )}
+                  </div>
+                ) : (
+                  <div className="text-center py-20 bg-gradient-to-br from-slate-50 to-gray-100 rounded-lg border-2 border-dashed border-slate-300">
+                    <div className="max-w-md mx-auto">
+                      <BarChart3 className="h-20 w-20 mx-auto mb-6 text-slate-400" />
+                      <h3 className="text-xl font-semibold text-slate-600 mb-3">No Plot Data Available</h3>
+                      <p className="text-slate-500 leading-relaxed">
+                        The analysis data does not contain plot information for this symptom. Please ensure the data
+                        includes biomarker associations.
+                      </p>
+                    </div>
+                  </div>
+                )}
+              </div>
             </div>
           </TabsContent>
         </Tabs>
@@ -1494,38 +2237,38 @@ export default function SymptomInfographic() {
           <div className="space-y-1">
             <div className="flex justify-between">
               <span>Total Score:</span>
-              <span className="font-semibold">{tooltip.total_avg.toFixed(4)}</span>
+              <span className="font-semibold">{(tooltip.total_avg || 0).toFixed(4)}</span>
             </div>
-            {tooltip.avg_inhibitor !== null && (
+            {tooltip.avg_inhibitor !== null && tooltip.avg_inhibitor !== undefined && (
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-2">
                   <div className="w-3 h-3 bg-green-500 rounded"></div>
                   <span>Inhibitor:</span>
                 </div>
                 <span className="font-semibold">
-                  {tooltip.avg_inhibitor.toFixed(4)} ({tooltip.percent_inhibitor.toFixed(1)}%)
+                  {(tooltip.avg_inhibitor || 0).toFixed(4)} ({(tooltip.percent_inhibitor || 0).toFixed(1)}%)
                 </span>
               </div>
             )}
-            {tooltip.avg_promoter !== null && (
+            {tooltip.avg_promoter !== null && tooltip.avg_promoter !== undefined && (
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-2">
                   <div className="w-3 h-3 bg-yellow-500 rounded"></div>
                   <span>Promoter:</span>
                 </div>
                 <span className="font-semibold">
-                  {tooltip.avg_promoter.toFixed(4)} ({tooltip.percent_promoter.toFixed(1)}%)
+                  {(tooltip.avg_promoter || 0).toFixed(4)} ({(tooltip.percent_promoter || 0).toFixed(1)}%)
                 </span>
               </div>
             )}
-            {tooltip.avg_unknown !== null && (
+            {tooltip.avg_unknown !== null && tooltip.avg_unknown !== undefined && (
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-2">
                   <div className="w-3 h-3 bg-gray-500 rounded"></div>
                   <span>Unknown:</span>
                 </div>
                 <span className="font-semibold">
-                  {tooltip.avg_unknown.toFixed(4)} ({tooltip.percent_unknown.toFixed(1)}%)
+                  {(tooltip.avg_unknown || 0).toFixed(4)} ({(tooltip.percent_unknown || 0).toFixed(1)}%)
                 </span>
               </div>
             )}
@@ -1553,7 +2296,7 @@ export default function SymptomInfographic() {
             <span className="font-medium">No Data</span>
           </div>
           <div className="text-slate-500">
-            <Info className="w-4 h-4 inline mr-1" />
+            <Info className="h-4 w-4 inline mr-1" />
             Click diseases/circles to analyze • Hover for details
           </div>
         </div>
