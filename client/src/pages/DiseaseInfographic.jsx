@@ -5,7 +5,7 @@ import { useLocation } from "react-router-dom"
 import { Card } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
-import { X, Info, TrendingUp, TrendingDown, Activity, ZoomIn, ZoomOut } from "lucide-react"
+import { X, Info, TrendingUp, TrendingDown, Activity, ZoomIn, ZoomOut, HelpCircle } from "lucide-react"
 
 export default function DiseaseInfographic() {
   const location = useLocation()
@@ -18,6 +18,13 @@ export default function DiseaseInfographic() {
   const [zoomLevel, setZoomLevel] = useState(1)
   const svgContainerRef = useRef(null)
   const detailsSectionRef = useRef(null)
+
+  // Filter states
+  const [biomarkerFilter, setBiomarkerFilter] = useState("")
+  const [symptomFilter, setSymptomFilter] = useState("")
+  const [scoreThreshold, setScoreThreshold] = useState(0)
+  const [showOnlyWithData, setShowOnlyWithData] = useState(false)
+
   const CIRCLE_RADIUS = 16
   const cellSize = 60 // Increased cell size for better spacing
   const margin = { top: 180, right: 60, bottom: 80, left: 320 } // Increased margins for labels
@@ -27,7 +34,10 @@ export default function DiseaseInfographic() {
   useEffect(() => {
     if (svgContainerRef.current) {
       const container = svgContainerRef.current
-      container.scrollLeft = (1200 * zoomLevel - container.clientWidth) / 2
+      container.scrollLeft =
+        (Math.max(finalSymptoms.length * cellSize + margin.left + margin.right, 1200) * zoomLevel -
+          container.clientWidth) /
+        2
     }
   }, [zoomLevel])
 
@@ -69,21 +79,71 @@ export default function DiseaseInfographic() {
   })
   const symptoms = Array.from(allSymptoms).sort()
 
-  const width = Math.max(symptoms.length * cellSize + margin.left + margin.right, 1200)
-  const height = Math.max(biomarkers.length * cellSize + margin.top + margin.bottom, 800)
+  // Apply filters to biomarkers and symptoms
+  const filteredBiomarkers = biomarkers.filter((biomarker) =>
+    biomarker.toLowerCase().includes(biomarkerFilter.toLowerCase()),
+  )
+
+  const filteredSymptoms = symptoms.filter((symptom) => symptom.toLowerCase().includes(symptomFilter.toLowerCase()))
+
+  // Further filter based on score threshold and data availability
+  const finalBiomarkers = filteredBiomarkers.filter((biomarker) => {
+    if (!showOnlyWithData && scoreThreshold === 0) return true
+
+    const hasValidData = filteredSymptoms.some((symptom) => {
+      const datum = data[biomarker]?.[symptom]
+      if (!datum) return !showOnlyWithData
+      return datum.total_avg >= scoreThreshold
+    })
+
+    return hasValidData
+  })
+
+  const finalSymptoms = filteredSymptoms.filter((symptom) => {
+    if (!showOnlyWithData && scoreThreshold === 0) return true
+
+    const hasValidData = finalBiomarkers.some((biomarker) => {
+      const datum = data[biomarker]?.[symptom]
+      if (!datum) return !showOnlyWithData
+      return datum.total_avg >= scoreThreshold
+    })
+
+    return hasValidData
+  })
+
+  const width = Math.max(finalSymptoms.length * cellSize + margin.left + margin.right, 1200)
+  const height = Math.max(finalBiomarkers.length * cellSize + margin.top + margin.bottom, 800)
 
   console.log("Total biomarkers:", biomarkers.length)
   console.log("Total symptoms:", symptoms.length)
   console.log("Symptoms:", symptoms)
 
-  // Create gradient for colored circles
-  const createGradient = (inhibitorPercent, promoterPercent, id) => (
+  // Create gradient for colored circles with updated colors
+  const createGradient = (inhibitorPercent, promoterPercent, unknownPercent, id) => (
     <defs key={id}>
       <linearGradient id={id} x1="0%" y1="0%" x2="100%" y2="0%">
-        <stop offset="0%" stopColor="#10b981" stopOpacity={inhibitorPercent / 100} />
-        <stop offset={`${inhibitorPercent}%`} stopColor="#10b981" stopOpacity={inhibitorPercent / 100} />
-        <stop offset={`${inhibitorPercent}%`} stopColor="#f59e0b" stopOpacity={promoterPercent / 100} />
-        <stop offset="100%" stopColor="#f59e0b" stopOpacity={promoterPercent / 100} />
+        <stop offset="0%" stopColor="oklch(0.925 0.084 155.995)" stopOpacity={inhibitorPercent / 100} />
+        <stop
+          offset={`${inhibitorPercent}%`}
+          stopColor="oklch(0.925 0.084 155.995)"
+          stopOpacity={inhibitorPercent / 100}
+        />
+        <stop
+          offset={`${inhibitorPercent}%`}
+          stopColor="oklch(0.924 0.12 95.746)"
+          stopOpacity={promoterPercent / 100}
+        />
+        <stop
+          offset={`${inhibitorPercent + promoterPercent}%`}
+          stopColor="oklch(0.924 0.12 95.746)"
+          stopOpacity={promoterPercent / 100}
+        />
+        <stop
+          offset={`${inhibitorPercent + promoterPercent}%`}
+          stopColor="#6b7280"
+          stopOpacity={unknownPercent / 100}
+        />
+        <stop offset="100%" stopColor="#6b7280" stopOpacity={unknownPercent / 100} />
       </linearGradient>
     </defs>
   )
@@ -98,8 +158,10 @@ export default function DiseaseInfographic() {
       total_avg: datum.total_avg || 0,
       avg_inhibitor: datum.avg_inhibitor || 0,
       avg_promoter: datum.avg_promoter || 0,
+      avg_unknown: datum.avg_unknown || 0,
       percent_inhibitor: datum.percent_inhibitor || 0,
       percent_promoter: datum.percent_promoter || 0,
+      percent_unknown: datum.percent_unknown || 0,
       x: rect.left + rect.width / 2,
       y: rect.top - 10,
     })
@@ -124,17 +186,21 @@ export default function DiseaseInfographic() {
       biomarkersWithData: 0,
       avgInhibitorScore: 0,
       avgPromoterScore: 0,
+      avgUnknownScore: 0,
       avgTotalScore: 0,
       strongestInhibitor: null,
       strongestPromoter: null,
+      strongestUnknown: null,
       biomarkerData: [],
     }
 
     let totalInhibitor = 0
     let totalPromoter = 0
+    let totalUnknown = 0
     let totalScore = 0
     let maxInhibitor = 0
     let maxPromoter = 0
+    let maxUnknown = 0
 
     biomarkers.forEach((biomarker) => {
       const datum = data[biomarker]?.[symptom]
@@ -142,6 +208,7 @@ export default function DiseaseInfographic() {
         symptomStats.biomarkersWithData++
         totalInhibitor += datum.avg_inhibitor || 0
         totalPromoter += datum.avg_promoter || 0
+        totalUnknown += datum.avg_unknown || 0
         totalScore += datum.total_avg || 0
 
         if ((datum.avg_inhibitor || 0) > maxInhibitor) {
@@ -154,6 +221,11 @@ export default function DiseaseInfographic() {
           symptomStats.strongestPromoter = { biomarker, score: datum.avg_promoter || 0 }
         }
 
+        if ((datum.avg_unknown || 0) > maxUnknown) {
+          maxUnknown = datum.avg_unknown || 0
+          symptomStats.strongestUnknown = { biomarker, score: datum.avg_unknown || 0 }
+        }
+
         symptomStats.biomarkerData.push({
           biomarker,
           ...datum,
@@ -164,6 +236,7 @@ export default function DiseaseInfographic() {
     if (symptomStats.biomarkersWithData > 0) {
       symptomStats.avgInhibitorScore = totalInhibitor / symptomStats.biomarkersWithData
       symptomStats.avgPromoterScore = totalPromoter / symptomStats.biomarkersWithData
+      symptomStats.avgUnknownScore = totalUnknown / symptomStats.biomarkersWithData
       symptomStats.avgTotalScore = totalScore / symptomStats.biomarkersWithData
     }
 
@@ -185,10 +258,22 @@ export default function DiseaseInfographic() {
     setCircleDetails({
       biomarker,
       symptom,
-      ...datum,
+      total_avg: datum.total_avg || 0,
+      avg_inhibitor: datum.avg_inhibitor || 0,
+      avg_promoter: datum.avg_promoter || 0,
+      avg_unknown: datum.avg_unknown || 0,
+      percent_inhibitor: datum.percent_inhibitor || 0,
+      percent_promoter: datum.percent_promoter || 0,
+      percent_unknown: datum.percent_unknown || 0,
       // Additional analysis
-      dominantType: (datum.percent_inhibitor || 0) > (datum.percent_promoter || 0) ? "Inhibitor" : "Promoter",
-      confidence: Math.max(datum.percent_inhibitor || 0, datum.percent_promoter || 0),
+      dominantType:
+        (datum.percent_inhibitor || 0) > (datum.percent_promoter || 0) &&
+        (datum.percent_inhibitor || 0) > (datum.percent_unknown || 0)
+          ? "Inhibitor"
+          : (datum.percent_promoter || 0) > (datum.percent_unknown || 0)
+            ? "Promoter"
+            : "Unknown",
+      confidence: Math.max(datum.percent_inhibitor || 0, datum.percent_promoter || 0, datum.percent_unknown || 0),
     })
   }
 
@@ -217,7 +302,9 @@ export default function DiseaseInfographic() {
           </div>
           <div className="flex items-center gap-4">
             <div className="text-sm text-slate-500">
-              {biomarkers.length} biomarkers × {symptoms.length} symptoms
+              {finalBiomarkers.length} biomarkers × {finalSymptoms.length} symptoms
+              {(biomarkerFilter || symptomFilter || scoreThreshold > 0 || showOnlyWithData) &&
+                ` (filtered from ${biomarkers.length} × ${symptoms.length})`}
             </div>
             <div className="flex items-center gap-2">
               <Button variant="outline" size="sm" onClick={handleZoomOut} disabled={zoomLevel <= 0.6}>
@@ -233,6 +320,60 @@ export default function DiseaseInfographic() {
       </div>
 
       <div className="p-4 space-y-4">
+        {/* Filter Controls for Association Matrix */}
+        <div className="bg-white rounded-lg border border-slate-200 p-4 shadow-sm mb-4">
+          <h4 className="text-lg font-semibold text-slate-800 mb-4 flex items-center gap-2">
+            <Activity className="h-5 w-5" />
+            Matrix Filters
+          </h4>
+          <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+            <div>
+              <label className="block text-sm font-medium text-slate-700 mb-2">Search Biomarkers</label>
+              <input
+                type="text"
+                placeholder="Filter biomarkers..."
+                value={biomarkerFilter}
+                onChange={(e) => setBiomarkerFilter(e.target.value)}
+                className="w-full p-2 border border-slate-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-slate-700 mb-2">Search Symptoms</label>
+              <input
+                type="text"
+                placeholder="Filter symptoms..."
+                value={symptomFilter}
+                onChange={(e) => setSymptomFilter(e.target.value)}
+                className="w-full p-2 border border-slate-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-slate-700 mb-2">Min Score Threshold</label>
+              <input
+                type="number"
+                step="0.001"
+                min="0"
+                placeholder="0.000"
+                value={scoreThreshold}
+                onChange={(e) => setScoreThreshold(Number(e.target.value))}
+                className="w-full p-2 border border-slate-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-slate-700 mb-2">Display Options</label>
+              <label className="flex items-center gap-2 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={showOnlyWithData}
+                  onChange={(e) => setShowOnlyWithData(e.target.checked)}
+                  className="rounded border-slate-300 text-blue-600 focus:ring-blue-500"
+                />
+                <span className="text-sm text-slate-700">Show only with data</span>
+              </label>
+            </div>
+          </div>
+        </div>
+
         {/* Main Visualization */}
         <div className="overflow-hidden">
           <div
@@ -247,17 +388,22 @@ export default function DiseaseInfographic() {
                 preserveAspectRatio="xMinYMin meet"
               >
                 {/* Create gradients for all data points */}
-                {biomarkers.map((biomarker, biomarkerIndex) =>
-                  symptoms.map((symptom, symptomIndex) => {
+                {finalBiomarkers.map((biomarker, biomarkerIndex) =>
+                  finalSymptoms.map((symptom, symptomIndex) => {
                     const datum = data[biomarker]?.[symptom]
                     if (!datum) return null
                     const gradientId = `gradient-${biomarkerIndex}-${symptomIndex}`
-                    return createGradient(datum.percent_inhibitor || 0, datum.percent_promoter || 0, gradientId)
+                    return createGradient(
+                      datum.percent_inhibitor || 0,
+                      datum.percent_promoter || 0,
+                      datum.percent_unknown || 0,
+                      gradientId,
+                    )
                   }),
                 )}
 
                 {/* Y-axis labels (Biomarkers) */}
-                {biomarkers.map((biomarker, index) => (
+                {finalBiomarkers.map((biomarker, index) => (
                   <text
                     key={biomarker}
                     x={margin.left - 15}
@@ -271,7 +417,7 @@ export default function DiseaseInfographic() {
                 ))}
 
                 {/* X-axis labels (Symptoms) - positioned at top with better spacing */}
-                {symptoms.map((symptom, index) => (
+                {finalSymptoms.map((symptom, index) => (
                   <g key={symptom}>
                     <text
                       x={margin.left + index * cellSize + cellSize / 2}
@@ -297,8 +443,8 @@ export default function DiseaseInfographic() {
                 ))}
 
                 {/* Complete matrix - show circle for EVERY biomarker-symptom combination */}
-                {biomarkers.map((biomarker, biomarkerIndex) =>
-                  symptoms.map((symptom, symptomIndex) => {
+                {finalBiomarkers.map((biomarker, biomarkerIndex) =>
+                  finalSymptoms.map((symptom, symptomIndex) => {
                     const datum = data[biomarker]?.[symptom]
                     const cx = margin.left + symptomIndex * cellSize + cellSize / 2
                     const cy = margin.top + biomarkerIndex * cellSize + cellSize / 2
@@ -341,24 +487,24 @@ export default function DiseaseInfographic() {
                 )}
 
                 {/* Grid lines for better readability */}
-                {biomarkers.map((_, index) => (
+                {finalBiomarkers.map((_, index) => (
                   <line
                     key={`hgrid-${index}`}
                     x1={margin.left - 5}
                     y1={margin.top + index * cellSize}
-                    x2={margin.left + symptoms.length * cellSize}
+                    x2={margin.left + finalSymptoms.length * cellSize}
                     y2={margin.top + index * cellSize}
                     stroke="#f1f5f9"
                     strokeWidth="1"
                   />
                 ))}
-                {symptoms.map((_, index) => (
+                {finalSymptoms.map((_, index) => (
                   <line
                     key={`vgrid-${index}`}
                     x1={margin.left + index * cellSize}
                     y1={margin.top - 5}
                     x2={margin.left + index * cellSize}
-                    y2={margin.top + biomarkers.length * cellSize}
+                    y2={margin.top + finalBiomarkers.length * cellSize}
                     stroke="#f1f5f9"
                     strokeWidth="1"
                   />
@@ -390,6 +536,7 @@ export default function DiseaseInfographic() {
                 </Button>
               </div>
 
+              {/* Symptom Details */}
               {selectedSymptom && symptomDetails && (
                 <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
                   <div className="space-y-4">
@@ -429,6 +576,19 @@ export default function DiseaseInfographic() {
                           </div>
                         </div>
                       </div>
+
+                      {/* Only show Unknown Effect if it's greater than 0 */}
+                      {symptomDetails.avgUnknownScore > 0 && (
+                        <div className="flex items-center gap-2 p-3 bg-gray-50 rounded-lg">
+                          <HelpCircle className="h-4 w-4 text-gray-600" />
+                          <div className="flex-1">
+                            <div className="text-sm text-gray-700 font-medium">Avg Unknown Score</div>
+                            <div className="text-lg font-bold text-gray-800">
+                              {symptomDetails.avgUnknownScore.toFixed(3)}
+                            </div>
+                          </div>
+                        </div>
+                      )}
                     </div>
 
                     {symptomDetails.strongestInhibitor && (
@@ -454,6 +614,19 @@ export default function DiseaseInfographic() {
                         </div>
                       </div>
                     )}
+
+                    {/* Only show Unknown if it exists and is greater than 0 */}
+                    {symptomDetails.strongestUnknown && symptomDetails.strongestUnknown.score > 0 && (
+                      <div className="p-3 bg-gray-50 border border-gray-200 rounded-lg">
+                        <div className="text-sm font-medium text-gray-700 mb-1">Strongest Unknown</div>
+                        <div className="text-sm text-gray-800">
+                          {symptomDetails.strongestUnknown.biomarker.replace(/_/g, " ")}
+                        </div>
+                        <div className="text-lg font-bold text-gray-900">
+                          {symptomDetails.strongestUnknown.score.toFixed(3)}
+                        </div>
+                      </div>
+                    )}
                   </div>
 
                   <div>
@@ -476,57 +649,152 @@ export default function DiseaseInfographic() {
                 </div>
               )}
 
-              {/* Circle Details */}
+              {/* Circle Details - Enhanced UI like SymptomInfographic */}
               {selectedCircle && circleDetails && (
-                <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                  <div className="space-y-4">
-                    <div>
-                      <h4 className="font-semibold text-slate-700 mb-1">
-                        {circleDetails.biomarker.replace(/_/g, " ")}
-                      </h4>
-                      <p className="text-sm text-slate-600 mb-3 capitalize">{circleDetails.symptom}</p>
-
-                      <div className="bg-blue-50 p-3 rounded-lg mb-4">
-                        <div className="text-sm text-blue-700 font-medium">Dominant Effect</div>
-                        <div className="text-lg font-bold text-blue-800">
-                          {circleDetails.dominantType} ({circleDetails.confidence.toFixed(1)}%)
+                <div className="space-y-6">
+                  {/* Header Section */}
+                  <div className="bg-gradient-to-r from-blue-600 to-indigo-600 text-white p-6 rounded-lg">
+                    <div className="flex items-start justify-between">
+                      <div className="flex-1">
+                        <h4 className="text-2xl font-bold mb-2">{circleDetails.biomarker.replace(/_/g, " ")}</h4>
+                        <p className="text-blue-100 text-lg mb-3 capitalize">{circleDetails.symptom}</p>
+                        <div className="flex items-center gap-4">
+                          <Badge variant="secondary" className="bg-white/20 text-white border-white/30">
+                            {circleDetails.dominantType} Effect
+                          </Badge>
+                          <span className="text-blue-100">
+                            Confidence: {(circleDetails.confidence || 0).toFixed(1)}%
+                          </span>
                         </div>
                       </div>
-                    </div>
-
-                    <div className="space-y-3">
-                      <div className="p-3 bg-slate-50 rounded-lg">
-                        <div className="text-sm text-slate-600">Total Average Score</div>
-                        <div className="text-xl font-bold text-slate-800">
-                          {(circleDetails.total_avg || 0).toFixed(4)}
-                        </div>
-                      </div>
-
-                      <div className="p-3 bg-green-50 border border-green-200 rounded-lg">
-                        <div className="text-sm font-medium text-green-700">Inhibitor Effect</div>
-                        <div className="text-lg font-bold text-green-800">
-                          {(circleDetails.avg_inhibitor || 0).toFixed(4)} (
-                          {(circleDetails.percent_inhibitor || 0).toFixed(1)}%)
-                        </div>
-                      </div>
-
-                      <div className="p-3 bg-yellow-50 border border-yellow-200 rounded-lg">
-                        <div className="text-sm font-medium text-yellow-700">Promoter Effect</div>
-                        <div className="text-lg font-bold text-yellow-800">
-                          {(circleDetails.avg_promoter || 0).toFixed(4)} (
-                          {(circleDetails.percent_promoter || 0).toFixed(1)}%)
-                        </div>
+                      <div className="text-right">
+                        <div className="text-3xl font-bold">{(circleDetails.total_avg || 0).toFixed(3)}</div>
+                        <div className="text-blue-200 text-sm">Total Score</div>
                       </div>
                     </div>
                   </div>
 
-                  <div className="p-3 bg-blue-50 rounded-lg">
-                    <h5 className="font-medium text-blue-800 mb-2">Clinical Significance</h5>
-                    <p className="text-sm text-blue-700">
-                      This {circleDetails.dominantType.toLowerCase()} relationship between{" "}
-                      <strong>{circleDetails.biomarker.replace(/_/g, " ")}</strong> and{" "}
-                      <strong>{circleDetails.symptom}</strong> suggests potential therapeutic implications.
-                    </p>
+                  {/* Main Content Grid */}
+                  <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                    {/* Left Column - Metrics */}
+                    <div className="space-y-4">
+                      <h5 className="text-lg font-semibold text-slate-800 mb-4">Effect Breakdown</h5>
+
+                      {circleDetails.avg_inhibitor !== null && circleDetails.avg_inhibitor !== undefined && (
+                        <div className="bg-gradient-to-r from-green-50 to-emerald-50 p-4 rounded-lg border border-green-200">
+                          <div className="flex items-center justify-between mb-2">
+                            <div className="flex items-center gap-2">
+                              <TrendingDown className="h-5 w-5 text-green-600" />
+                              <span className="font-medium text-green-800">Antagonist Effect</span>
+                            </div>
+                            <Badge variant="outline" className="border-green-300 text-green-700">
+                              {(circleDetails.percent_inhibitor || 0).toFixed(1)}%
+                            </Badge>
+                          </div>
+                          <div className="text-2xl font-bold text-green-900">
+                            {(circleDetails.avg_inhibitor || 0).toFixed(4)}
+                          </div>
+                          <div className="text-sm text-green-600 mt-1">Suppressive interaction strength</div>
+                        </div>
+                      )}
+
+                      {circleDetails.avg_promoter !== null && circleDetails.avg_promoter !== undefined && (
+                        <div className="bg-gradient-to-r from-amber-50 to-yellow-50 p-4 rounded-lg border border-amber-200">
+                          <div className="flex items-center justify-between mb-2">
+                            <div className="flex items-center gap-2">
+                              <TrendingUp className="h-5 w-5 text-amber-600" />
+                              <span className="font-medium text-amber-800">Agonist Effect</span>
+                            </div>
+                            <Badge variant="outline" className="border-amber-300 text-amber-700">
+                              {(circleDetails.percent_promoter || 0).toFixed(1)}%
+                            </Badge>
+                          </div>
+                          <div className="text-2xl font-bold text-amber-900">
+                            {(circleDetails.avg_promoter || 0).toFixed(4)}
+                          </div>
+                          <div className="text-sm text-amber-600 mt-1">Enhancing interaction strength</div>
+                        </div>
+                      )}
+
+                      {/* Only show Unknown Effect if it's greater than 0 */}
+                      {circleDetails.avg_unknown !== null &&
+                        circleDetails.avg_unknown !== undefined &&
+                        circleDetails.avg_unknown > 0 && (
+                          <div className="bg-gradient-to-r from-gray-50 to-slate-50 p-4 rounded-lg border border-gray-200">
+                            <div className="flex items-center justify-between mb-2">
+                              <div className="flex items-center gap-2">
+                                <HelpCircle className="h-5 w-5 text-gray-600" />
+                                <span className="font-medium text-gray-800">Unknown Effect</span>
+                              </div>
+                              <Badge variant="outline" className="border-gray-300 text-gray-700">
+                                {(circleDetails.percent_unknown || 0).toFixed(1)}%
+                              </Badge>
+                            </div>
+                            <div className="text-2xl font-bold text-gray-900">
+                              {(circleDetails.avg_unknown || 0).toFixed(4)}
+                            </div>
+                            <div className="text-sm text-gray-600 mt-1">Undetermined interaction type</div>
+                          </div>
+                        )}
+
+                      {/* Clinical Significance */}
+                      <div className="bg-gradient-to-r from-blue-50 to-indigo-50 p-4 rounded-lg border border-blue-200">
+                        <h6 className="font-semibold text-blue-800 mb-2 flex items-center gap-2">
+                          <Activity className="h-4 w-4" />
+                          Clinical Significance
+                        </h6>
+                        <p className="text-sm text-blue-700 leading-relaxed">
+                          This <strong>{circleDetails.dominantType.toLowerCase()}</strong> relationship between{" "}
+                          <strong>{circleDetails.biomarker.replace(/_/g, " ")}</strong> and{" "}
+                          <strong>{circleDetails.symptom}</strong> in the context of <strong>{diseaseName}</strong>{" "}
+                          suggests potential therapeutic targets for intervention.
+                        </p>
+                      </div>
+                    </div>
+
+                    {/* Right Column - Additional Information */}
+                    <div className="space-y-4">
+                      <h5 className="text-lg font-semibold text-slate-800">Interaction Summary</h5>
+
+                      <div className="bg-slate-50 rounded-lg border border-slate-200 p-4">
+                        <div className="space-y-3">
+                          <div className="flex justify-between items-center">
+                            <span className="text-sm font-medium text-slate-700">Biomarker:</span>
+                            <span className="text-sm text-slate-900 font-semibold">
+                              {circleDetails.biomarker.replace(/_/g, " ")}
+                            </span>
+                          </div>
+                          <div className="flex justify-between items-center">
+                            <span className="text-sm font-medium text-slate-700">Symptom:</span>
+                            <span className="text-sm text-slate-900 font-semibold capitalize">
+                              {circleDetails.symptom}
+                            </span>
+                          </div>
+                          <div className="flex justify-between items-center">
+                            <span className="text-sm font-medium text-slate-700">Disease Context:</span>
+                            <span className="text-sm text-slate-900 font-semibold">{diseaseName}</span>
+                          </div>
+                          <div className="flex justify-between items-center">
+                            <span className="text-sm font-medium text-slate-700">Dominant Effect:</span>
+                            <span className="text-sm text-slate-900 font-semibold">{circleDetails.dominantType}</span>
+                          </div>
+                          <div className="flex justify-between items-center">
+                            <span className="text-sm font-medium text-slate-700">Confidence Level:</span>
+                            <span className="text-sm text-slate-900 font-semibold">
+                              {(circleDetails.confidence || 0).toFixed(1)}%
+                            </span>
+                          </div>
+                        </div>
+                      </div>
+
+                      <div className="bg-gradient-to-br from-purple-50 to-indigo-50 p-4 rounded-lg border border-purple-200">
+                        <h6 className="font-semibold text-purple-800 mb-2">Research Implications</h6>
+                        <p className="text-sm text-purple-700 leading-relaxed">
+                          Understanding this biomarker-symptom relationship could provide insights into disease
+                          mechanisms and potential therapeutic interventions for {diseaseName}.
+                        </p>
+                      </div>
+                    </div>
                   </div>
                 </div>
               )}
@@ -543,7 +811,7 @@ export default function DiseaseInfographic() {
             left: tooltip.x,
             top: tooltip.y,
             transform: "translate(-50%, -100%)",
-            maxWidth: "300px",
+            maxWidth: "320px",
           }}
         >
           <div className="font-bold text-blue-300 mb-1">{tooltip.biomarker.replace(/_/g, " ")}</div>
@@ -553,24 +821,40 @@ export default function DiseaseInfographic() {
               <span>Total Score:</span>
               <span className="font-semibold">{(tooltip.total_avg || 0).toFixed(4)}</span>
             </div>
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-2">
-                <div className="w-3 h-3 bg-green-500 rounded"></div>
-                <span>Inhibitor:</span>
+            {tooltip.avg_inhibitor !== null && tooltip.avg_inhibitor !== undefined && (
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <div className="w-3 h-3 rounded" style={{ backgroundColor: "oklch(0.925 0.084 155.995)" }}></div>
+                  <span>Inhibitor:</span>
+                </div>
+                <span className="font-semibold">
+                  {(tooltip.avg_inhibitor || 0).toFixed(4)} ({(tooltip.percent_inhibitor || 0).toFixed(1)}%)
+                </span>
               </div>
-              <span className="font-semibold">
-                {(tooltip.avg_inhibitor || 0).toFixed(4)} ({(tooltip.percent_inhibitor || 0).toFixed(1)}%)
-              </span>
-            </div>
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-2">
-                <div className="w-3 h-3 bg-yellow-500 rounded"></div>
-                <span>Promoter:</span>
+            )}
+            {tooltip.avg_promoter !== null && tooltip.avg_promoter !== undefined && (
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <div className="w-3 h-3 rounded" style={{ backgroundColor: "oklch(0.924 0.12 95.746)" }}></div>
+                  <span>Promoter:</span>
+                </div>
+                <span className="font-semibold">
+                  {(tooltip.avg_promoter || 0).toFixed(4)} ({(tooltip.percent_promoter || 0).toFixed(1)}%)
+                </span>
               </div>
-              <span className="font-semibold">
-                {(tooltip.avg_promoter || 0).toFixed(4)} ({(tooltip.percent_promoter || 0).toFixed(1)}%)
-              </span>
-            </div>
+            )}
+            {/* Only show Unknown in tooltip if it's greater than 0 */}
+            {tooltip.avg_unknown !== null && tooltip.avg_unknown !== undefined && tooltip.avg_unknown > 0 && (
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <div className="w-3 h-3 bg-gray-500 rounded"></div>
+                  <span>Unknown:</span>
+                </div>
+                <span className="font-semibold">
+                  {(tooltip.avg_unknown || 0).toFixed(4)} ({(tooltip.percent_unknown || 0).toFixed(1)}%)
+                </span>
+              </div>
+            )}
           </div>
         </div>
       )}
@@ -579,12 +863,16 @@ export default function DiseaseInfographic() {
       <div className="bg-white border-t border-slate-200 px-6 py-4">
         <div className="flex items-center justify-center gap-8 text-sm">
           <div className="flex items-center gap-2">
-            <div className="w-4 h-4 bg-green-500 rounded-full"></div>
+            <div className="w-4 h-4 rounded-full" style={{ backgroundColor: "oklch(0.925 0.084 155.995)" }}></div>
             <span className="font-medium">Inhibitor</span>
           </div>
           <div className="flex items-center gap-2">
-            <div className="w-4 h-4 bg-yellow-500 rounded-full"></div>
+            <div className="w-4 h-4 rounded-full" style={{ backgroundColor: "oklch(0.924 0.12 95.746)" }}></div>
             <span className="font-medium">Promoter</span>
+          </div>
+          <div className="flex items-center gap-2">
+            <div className="w-4 h-4 bg-gray-500 rounded-full"></div>
+            <span className="font-medium">Unknown</span>
           </div>
           <div className="flex items-center gap-2">
             <div className="w-3 h-3 bg-slate-300 rounded-full"></div>

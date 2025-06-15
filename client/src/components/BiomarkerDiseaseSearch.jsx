@@ -1095,12 +1095,12 @@ export default function BiomarkerDiseaseSearch() {
       icon: Stethoscope,
       description: "Explore symptom-disease correlations",
     },
-    {
-      id: "biomarker",
-      label: "Biomarker Landscape",
-      icon: FlaskConical,
-      description: "Investigate biomarker associations",
-    },
+    // {
+    //   id: "biomarker",
+    //   label: "Biomarker Landscape",
+    //   icon: FlaskConical,
+    //   description: "Investigate biomarker associations",
+    // },
   ]
 
   const handleBiomarkerSearch = async () => {

@@ -1,65 +1,3 @@
-// import { Link } from "react-router-dom"
-// import { FlaskRoundIcon as Flask } from "lucide-react"
-// import { Outlet } from "react-router-dom"
-
-// export default function Layout() {
-//   return (
-//     <div className="flex flex-col min-h-screen">
-//       <header className="sticky top-0 z-50 w-full border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
-//         <div className="container flex h-16 items-center">
-//           <div className="flex items-center gap-2 font-bold text-xl">
-//             <Flask className="h-6 w-6 text-teal-600" />
-//             <span>TrialPredict</span>
-//           </div>
-//           <nav className="ml-auto flex gap-4 sm:gap-6">
-//             <Link className="text-sm font-medium hover:underline underline-offset-4" to="#">
-//               About
-//             </Link>
-//             <Link className="text-sm font-medium hover:underline underline-offset-4" to="#">
-//               Features
-//             </Link>
-//             <Link className="text-sm font-medium hover:underline underline-offset-4" to="#">
-//               Documentation
-//             </Link>
-//             <Link className="text-sm font-medium hover:underline underline-offset-4" to="#">
-//               Contact
-//             </Link>
-//           </nav>
-//         </div>
-//       </header>
-
-//       <main className="flex-1">
-//         <Outlet />
-//       </main>
-
-//       <footer className="w-full border-t py-6">
-//         <div className="container flex flex-col items-center justify-center gap-4 md:flex-row md:gap-8">
-//           <div className="flex items-center gap-2 font-bold">
-//             <Flask className="h-5 w-5 text-teal-600" />
-//             <span>TrialPredict</span>
-//           </div>
-//           <p className="text-center text-sm text-muted-foreground md:text-left">
-//             © 2025 TrialPredict. All rights reserved.
-//           </p>
-//           <nav className="flex gap-4 sm:gap-6 md:ml-auto">
-//             <Link className="text-sm font-medium hover:underline underline-offset-4" to="#">
-//               Terms
-//             </Link>
-//             <Link className="text-sm font-medium hover:underline underline-offset-4" to="#">
-//               Privacy
-//             </Link>
-//             <Link className="text-sm font-medium hover:underline underline-offset-4" to="#">
-//               Contact
-//             </Link>
-//           </nav>
-//         </div>
-//       </footer>
-//     </div>
-//   )
-// }
-
-
-
 "use client"
 
 import { Link } from "react-router-dom"
@@ -77,7 +15,9 @@ export default function Layout() {
           {/* Logo */}
           <div className="flex items-center gap-3">
             <div className="p-2 bg-gradient-to-br from-blue-600 to-indigo-700 rounded-xl shadow-lg">
+              <a href="/" rel="noopener noreferrer">
               <Flask className="h-7 w-7 text-white" />
+              </a>
             </div>
             <div className="flex flex-col">
               <span className="font-bold text-xl text-slate-800 tracking-tight">TrialPredict</span>
@@ -110,18 +50,10 @@ export default function Layout() {
             </Link>
             <Link
               className="flex items-center gap-2 text-sm font-semibold text-slate-600 hover:text-blue-600 transition-colors duration-200 group"
-              to="#"
+              to="https://www.insimine.com/bookings"
             >
               <Phone className="h-4 w-4 group-hover:text-blue-600" />
               Contact
-            </Link>
-
-            {/* CTA Button */}
-            <Link
-              to="#"
-              className="ml-4 px-6 py-2.5 bg-gradient-to-r from-blue-600 to-indigo-600 text-white font-semibold text-sm rounded-xl hover:from-blue-700 hover:to-indigo-700 transition-all duration-300 shadow-lg hover:shadow-xl transform hover:-translate-y-0.5"
-            >
-              Get Started
             </Link>
           </nav>
 
