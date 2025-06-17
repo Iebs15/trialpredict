@@ -1086,14 +1086,14 @@ export default function DiseaseInfographic() {
               className="w-4 h-4 rounded-full"
               style={{ backgroundColor: "oklch(0.925 0.084 155.995)" }}
             ></div>
-            <span className="font-medium">Inhibitor</span>
+            <span className="font-medium">Antagonist</span>
           </div>
           <div className="flex items-center gap-2">
             <div
               className="w-4 h-4 rounded-full"
               style={{ backgroundColor: "oklch(0.924 0.12 95.746)" }}
             ></div>
-            <span className="font-medium">Promoter</span>
+            <span className="font-medium">Agonist</span>
           </div>
           <div className="flex items-center gap-2">
             <div className="w-4 h-4 bg-gray-500 rounded-full"></div>
