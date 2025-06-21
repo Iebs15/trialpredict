@@ -6,6 +6,8 @@
 // import { Badge } from "@/components/ui/badge"
 // import { Button } from "@/components/ui/button"
 // import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
+// import { Slider } from "@/components/ui/slider"
+// import { Switch } from "@/components/ui/switch"
 // import {
 //   X,
 //   Info,
@@ -22,6 +24,11 @@
 //   ChevronDown,
 //   ChevronUp,
 //   Filter,
+//   Search,
+//   Settings,
+//   Eye,
+//   Maximize2,
+//   Minimize2,
 // } from "lucide-react"
 // import { CardHeader, CardTitle, CardContent } from "@/components/ui/card"
 // import * as d3 from "d3"
@@ -183,7 +190,7 @@
 //       .text("Association Score")
 
 //     // Add legend
-//     const legend = svg.append("g").attr("transform", `translate(${width -50}, 50)`)
+//     const legend = svg.append("g").attr("transform", `translate(${width - 50}, 50)`)
 
 //     legend
 //       .append("rect")
@@ -211,13 +218,7 @@
 //       .attr("fill", "#fbbf24")
 //       .attr("opacity", 0.8)
 
-//     legend
-//       .append("text")
-//       .attr("x", 20)
-//       .attr("y", 37)
-//       .attr("font-size", "11px")
-//       .attr("fill", "#374151")
-//       .text("Agonist")
+//     legend.append("text").attr("x", 20).attr("y", 37).attr("font-size", "11px").attr("fill", "#374151").text("Agonist")
 //   }, [data, symptom, width, height])
 
 //   return (
@@ -227,8 +228,8 @@
 //   )
 // }
 
-// // Network Chart Component with improved filtering and layout
-// const NetworkChart = ({ data, width = 800, height = 600 }) => {
+// // Enhanced Network Chart Component with much better readability
+// const NetworkChart = ({ data, width = 1000, height = 700 }) => {
 //   const svgRef = useRef(null)
 //   const [allNodes, setAllNodes] = useState([])
 //   const [allLinks, setAllLinks] = useState([])
@@ -236,16 +237,26 @@
 //   const [filteredLinks, setFilteredLinks] = useState([])
 //   const [simulation, setSimulation] = useState(null)
 //   const [selectedNode, setSelectedNode] = useState(null)
-//   const [selectedNetworkDisease, setSelectedNetworkDisease] = useState(null) // For network highlighting
-//   const [isRunning, setIsRunning] = useState(true)
+//   const [selectedNetworkDisease, setSelectedNetworkDisease] = useState(null)
 //   const [isFiltersOpen, setIsFiltersOpen] = useState(false)
+//   const [isFullscreen, setIsFullscreen] = useState(false)
 
-//   // Filter states
+//   // Enhanced filter states
 //   const [selectedDisease, setSelectedDisease] = useState("")
 //   const [selectedBiomarker, setSelectedBiomarker] = useState("")
-//   const [connectionType, setConnectionType] = useState("all") // all, inhibitor, promoter, unknown
-//   const [strengthThreshold, setStrengthThreshold] = useState(0)
+//   const [connectionType, setConnectionType] = useState("all")
+//   const [strengthThreshold, setStrengthThreshold] = useState([0])
 //   const [showOnlyConnected, setShowOnlyConnected] = useState(true)
+//   const [nodeSearchTerm, setNodeSearchTerm] = useState("")
+
+//   // New layout and visualization controls
+//   const [layoutType, setLayoutType] = useState("force") // force, circular, hierarchical
+//   const [nodeSpacing, setNodeSpacing] = useState([150]) // Increased default spacing
+//   const [edgeBundling, setEdgeBundling] = useState(false)
+//   const [showLabels, setShowLabels] = useState(true)
+//   const [labelThreshold, setLabelThreshold] = useState([2]) // Only show labels for nodes with >= connections
+//   const [clusterSimilar, setClusterSimilar] = useState(true)
+//   const [highlightMode, setHighlightMode] = useState("neighbors") // neighbors, path, none
 
 //   // Initialize nodes and links from data
 //   useEffect(() => {
@@ -256,35 +267,50 @@
 
 //     console.log("Processing network data:", data)
 
-//     // Process data to create nodes and links
 //     const biomarkers = Object.keys(data)
 //     const diseases = Array.from(new Set(biomarkers.flatMap((biomarker) => Object.keys(data[biomarker] || {}))))
 
 //     console.log("Found biomarkers:", biomarkers.length, "diseases:", diseases.length)
 
-//     // Create nodes
+//     // Create nodes with enhanced properties
 //     const newNodes = []
 
 //     // Add biomarker nodes
 //     biomarkers.forEach((biomarker) => {
+//       const connections = diseases.filter((disease) => data[biomarker]?.[disease]?.total_avg > 0).length
+//       const totalStrength = diseases.reduce((sum, disease) => {
+//         const datum = data[biomarker]?.[disease]
+//         return sum + (datum?.total_avg || 0)
+//       }, 0)
+
 //       const node = {
 //         id: biomarker,
 //         type: "biomarker",
 //         name: biomarker.replace(/_/g, " "),
-//         connections: 0,
-//         totalStrength: 0,
+//         connections: connections,
+//         totalStrength: totalStrength,
+//         importance: connections * totalStrength, // Combined metric for importance
+//         group: Math.floor(connections / 3), // Group for clustering
 //       }
 //       newNodes.push(node)
 //     })
 
 //     // Add disease nodes
 //     diseases.forEach((disease) => {
+//       const connections = biomarkers.filter((biomarker) => data[biomarker]?.[disease]?.total_avg > 0).length
+//       const totalStrength = biomarkers.reduce((sum, biomarker) => {
+//         const datum = data[biomarker]?.[disease]
+//         return sum + (datum?.total_avg || 0)
+//       }, 0)
+
 //       const node = {
 //         id: disease,
 //         type: "disease",
 //         name: disease,
-//         connections: 0,
-//         totalStrength: 0,
+//         connections: connections,
+//         totalStrength: totalStrength,
+//         importance: connections * totalStrength,
+//         group: Math.floor(connections / 3) + 10, // Offset disease groups
 //       }
 //       newNodes.push(node)
 //     })
@@ -295,13 +321,11 @@
 //       diseases.forEach((disease) => {
 //         const datum = data[biomarker]?.[disease]
 //         if (datum && datum.total_avg > 0) {
-//           // Improved edge type detection using actual scores
 //           let edgeType = "unknown"
 //           const inhibitorScore = datum.avg_inhibitor || 0
 //           const promoterScore = datum.avg_promoter || 0
 //           const unknownScore = datum.avg_unknown || 0
 
-//           // Use actual scores for more accurate detection
 //           if (inhibitorScore > promoterScore && inhibitorScore > unknownScore && inhibitorScore > 0.001) {
 //             edgeType = "inhibitor"
 //           } else if (promoterScore > unknownScore && promoterScore > 0.001) {
@@ -316,93 +340,74 @@
 //             target: disease,
 //             type: edgeType,
 //             strength: strength,
-//             width: Math.max(1, Math.min(6, strength * 15)),
+//             width: Math.max(1, Math.min(8, strength * 20)), // Increased max width
 //             data: datum,
+//             importance: strength * 10, // For edge filtering
 //           }
 
 //           newLinks.push(link)
-
-//           // Update node connection counts
-//           const biomarkerNode = newNodes.find((n) => n.id === biomarker)
-//           const diseaseNode = newNodes.find((n) => n.id === disease)
-//           if (biomarkerNode) {
-//             biomarkerNode.connections++
-//             biomarkerNode.totalStrength += strength
-//           }
-//           if (diseaseNode) {
-//             diseaseNode.connections++
-//             diseaseNode.totalStrength += strength
-//           }
 //         }
 //       })
 //     })
 
 //     console.log("Created nodes:", newNodes.length, "links:", newLinks.length)
-//     console.log("Link types:", {
-//       inhibitor: newLinks.filter((l) => l.type === "inhibitor").length,
-//       promoter: newLinks.filter((l) => l.type === "promoter").length,
-//       unknown: newLinks.filter((l) => l.type === "unknown").length,
-//     })
-
 //     setAllNodes(newNodes)
 //     setAllLinks(newLinks)
 //   }, [data])
 
-//   // Apply filters - FIXED LOGIC
+//   // Enhanced filtering with search
 //   useEffect(() => {
 //     if (!allNodes.length || !allLinks.length) {
-//       console.log("No nodes or links to filter")
 //       return
 //     }
 
 //     let filteredLinkSet = [...allLinks]
 //     let filteredNodeSet = [...allNodes]
 
-//     console.log("Applying filters:", {
-//       connectionType,
-//       strengthThreshold,
-//       selectedDisease,
-//       selectedBiomarker,
-//       showOnlyConnected,
-//     })
-
-//     // Helper function to get source/target ID from link (handles both string and object)
+//     // Helper function to get source/target ID from link
 //     const getSourceId = (link) => (typeof link.source === "object" ? link.source.id : link.source)
 //     const getTargetId = (link) => (typeof link.target === "object" ? link.target.id : link.target)
 
-//     // Filter by selected disease - FIXED
+//     // Filter by search term
+//     if (nodeSearchTerm) {
+//       const searchLower = nodeSearchTerm.toLowerCase()
+//       const matchingNodeIds = new Set(
+//         filteredNodeSet.filter((node) => node.name.toLowerCase().includes(searchLower)).map((node) => node.id),
+//       )
+
+//       // Keep links that connect to matching nodes
+//       filteredLinkSet = filteredLinkSet.filter(
+//         (link) => matchingNodeIds.has(getSourceId(link)) || matchingNodeIds.has(getTargetId(link)),
+//       )
+//     }
+
+//     // Filter by selected disease
 //     if (selectedDisease) {
-//       console.log("Filtering by disease:", selectedDisease)
 //       filteredLinkSet = filteredLinkSet.filter((link) => {
 //         const targetId = getTargetId(link)
 //         return targetId === selectedDisease
 //       })
-//       console.log("Links after disease filter:", filteredLinkSet.length)
 //     }
 
-//     // Filter by selected biomarker - FIXED
+//     // Filter by selected biomarker
 //     if (selectedBiomarker) {
-//       console.log("Filtering by biomarker:", selectedBiomarker)
 //       filteredLinkSet = filteredLinkSet.filter((link) => {
 //         const sourceId = getSourceId(link)
 //         return sourceId === selectedBiomarker
 //       })
-//       console.log("Links after biomarker filter:", filteredLinkSet.length)
 //     }
 
 //     // Filter by connection type
 //     if (connectionType !== "all") {
 //       filteredLinkSet = filteredLinkSet.filter((link) => link.type === connectionType)
-//       console.log("Links after connection type filter:", filteredLinkSet.length)
 //     }
 
 //     // Filter by strength threshold
-//     if (strengthThreshold > 0) {
-//       filteredLinkSet = filteredLinkSet.filter((link) => link.strength >= strengthThreshold)
-//       console.log("Links after strength filter:", filteredLinkSet.length)
+//     if (strengthThreshold[0] > 0) {
+//       filteredLinkSet = filteredLinkSet.filter((link) => link.strength >= strengthThreshold[0])
 //     }
 
-//     // Filter nodes based on connections - IMPROVED
+//     // Filter nodes based on connections
 //     if (showOnlyConnected) {
 //       const connectedNodeIds = new Set()
 //       filteredLinkSet.forEach((link) => {
@@ -410,23 +415,29 @@
 //         connectedNodeIds.add(getTargetId(link))
 //       })
 //       filteredNodeSet = filteredNodeSet.filter((node) => connectedNodeIds.has(node.id))
-//       console.log("Nodes after connection filter:", filteredNodeSet.length)
-//     } else {
-//       // If not showing only connected, but we have specific disease/biomarker selected,
-//       // still filter nodes to show only relevant ones
-//       if (selectedDisease || selectedBiomarker) {
-//         const relevantNodeIds = new Set()
-//         filteredLinkSet.forEach((link) => {
-//           relevantNodeIds.add(getSourceId(link))
-//           relevantNodeIds.add(getTargetId(link))
-//         })
+//     }
 
-//         // Also add the selected disease/biomarker itself even if it has no connections
-//         if (selectedDisease) relevantNodeIds.add(selectedDisease)
-//         if (selectedBiomarker) relevantNodeIds.add(selectedBiomarker)
+//     // Apply search filter to nodes
+//     if (nodeSearchTerm) {
+//       const searchLower = nodeSearchTerm.toLowerCase()
+//       const relevantNodeIds = new Set()
 
-//         filteredNodeSet = filteredNodeSet.filter((node) => relevantNodeIds.has(node.id))
-//       }
+//       // Add directly matching nodes
+//       filteredNodeSet.forEach((node) => {
+//         if (node.name.toLowerCase().includes(searchLower)) {
+//           relevantNodeIds.add(node.id)
+//         }
+//       })
+
+//       // Add connected nodes
+//       filteredLinkSet.forEach((link) => {
+//         const sourceId = getSourceId(link)
+//         const targetId = getTargetId(link)
+//         if (relevantNodeIds.has(sourceId)) relevantNodeIds.add(targetId)
+//         if (relevantNodeIds.has(targetId)) relevantNodeIds.add(sourceId)
+//       })
+
+//       filteredNodeSet = filteredNodeSet.filter((node) => relevantNodeIds.has(node.id))
 //     }
 
 //     console.log("Final filtered results:", {
@@ -436,25 +447,29 @@
 
 //     setFilteredNodes(filteredNodeSet)
 //     setFilteredLinks(filteredLinkSet)
-//   }, [allNodes, allLinks, connectionType, strengthThreshold, selectedDisease, selectedBiomarker, showOnlyConnected])
+//   }, [
+//     allNodes,
+//     allLinks,
+//     connectionType,
+//     strengthThreshold,
+//     selectedDisease,
+//     selectedBiomarker,
+//     showOnlyConnected,
+//     nodeSearchTerm,
+//   ])
 
-//   // Create and update D3 visualization
+//   // Enhanced D3 visualization with better layout
 //   useEffect(() => {
 //     if (!filteredNodes.length || !svgRef.current) {
-//       console.log("No filtered nodes or SVG ref")
 //       return
 //     }
 
-//     console.log("Creating D3 visualization with", filteredNodes.length, "nodes and", filteredLinks.length, "links")
+//     const svg = d3.select(svgRef.current)
+//     svg.selectAll("*").remove()
 
-//     // Helper functions for getting source/target IDs - MOVED TO TOP
+//     // Helper functions
 //     const getSourceId = (d) => (typeof d.source === "object" ? d.source.id : d.source)
 //     const getTargetId = (d) => (typeof d.target === "object" ? d.target.id : d.target)
-
-//     const svg = d3.select(svgRef.current)
-
-//     // Clear previous content
-//     svg.selectAll("*").remove()
 
 //     // Create zoom behavior
 //     const zoom = d3
@@ -468,34 +483,22 @@
 
 //     const g = svg.append("g")
 
-//     // Create arrow markers for directed edges
-//     // const defs = svg.append("defs")
-//     // ;["inhibitor", "promoter", "unknown"].forEach((type) => {
-//     //   defs
-//     //     .append("marker")
-//     //     .attr("id", `arrow-${type}`)
-//     //     .attr("viewBox", "0 -5 10 10")
-//     //     .attr("refX", 25)
-//     //     .attr("refY", 0)
-//     //     .attr("markerWidth", 6)
-//     //     .attr("markerHeight", 6)
-//     //     .attr("orient", "auto")
-//     //     .append("path")
-//     //     .attr("d", "M0,-5L10,0L0,5")
-//     //     .attr("fill", type === "inhibitor" ? "#a1d99b" : type === "promoter" ? "#fed976" : "#9ca3af")
-//     // })
-
-//     // Function to determine if node/link should be highlighted
+//     // Enhanced highlighting logic
 //     const isHighlighted = (nodeId) => {
 //       if (!selectedNetworkDisease) return true
-//       return (
-//         nodeId === selectedNetworkDisease ||
-//         filteredLinks.some(
-//           (link) =>
-//             (getSourceId(link) === nodeId && getTargetId(link) === selectedNetworkDisease) ||
-//             (getTargetId(link) === nodeId && getSourceId(link) === selectedNetworkDisease),
+
+//       if (highlightMode === "neighbors") {
+//         return (
+//           nodeId === selectedNetworkDisease ||
+//           filteredLinks.some(
+//             (link) =>
+//               (getSourceId(link) === nodeId && getTargetId(link) === selectedNetworkDisease) ||
+//               (getTargetId(link) === nodeId && getSourceId(link) === selectedNetworkDisease),
+//           )
 //         )
-//       )
+//       }
+
+//       return nodeId === selectedNetworkDisease
 //     }
 
 //     const isLinkHighlighted = (link) => {
@@ -505,80 +508,88 @@
 //       return sourceId === selectedNetworkDisease || targetId === selectedNetworkDisease
 //     }
 
-//     // Create links with proper data binding
+//     // Create links with enhanced styling
 //     const linkGroup = g.append("g").attr("class", "links")
 //     const link = linkGroup
 //       .selectAll("line")
-//       .data(filteredLinks, (d) => `${getSourceId(d)}-${getTargetId(d)}`) // Use helper function
+//       .data(filteredLinks, (d) => `${getSourceId(d)}-${getTargetId(d)}`)
 //       .enter()
 //       .append("line")
 //       .attr("stroke", (d) => {
 //         switch (d.type) {
 //           case "inhibitor":
-//             return "#a1d99b"
+//             return "#10b981" // Better green
 //           case "promoter":
-//             return "#fed976"
+//             return "#f59e0b" // Better amber
 //           default:
-//             return "#9ca3af"
+//             return "#6b7280"
 //         }
 //       })
-//       .attr("stroke-width", (d) => d.width)
-//       .attr("stroke-opacity", (d) => (isLinkHighlighted(d) ? 0.7 : 0.1))
-//       // .attr("marker-end", (d) => `url(#arrow-${d.type})`)
+//       .attr("stroke-width", (d) => Math.max(1, d.width * 0.8)) // Slightly thinner
+//       .attr("stroke-opacity", (d) => (isLinkHighlighted(d) ? 0.8 : 0.15)) // Better contrast
 //       .style("cursor", "pointer")
 //       .on("mouseover", function (event, d) {
 //         d3.select(this)
 //           .attr("stroke-opacity", 1)
 //           .attr("stroke-width", d.width + 2)
 
-//         // Show tooltip
+//         // Enhanced tooltip
 //         const tooltip = d3
 //           .select("body")
 //           .append("div")
 //           .attr("class", "network-tooltip")
 //           .style("position", "absolute")
-//           .style("background", "rgba(0, 0, 0, 0.9)")
+//           .style("background", "rgba(0, 0, 0, 0.95)")
 //           .style("color", "white")
-//           .style("padding", "10px")
+//           .style("padding", "12px")
 //           .style("border-radius", "8px")
 //           .style("font-size", "12px")
 //           .style("pointer-events", "none")
 //           .style("z-index", "1000")
+//           .style("box-shadow", "0 4px 12px rgba(0,0,0,0.3)")
 //           .html(`
-//           <div><strong>${typeof d.source === "object" ? d.source.name || d.source.id : d.source}</strong> → <strong>${typeof d.target === "object" ? d.target.name || d.target.id : d.target}</strong></div>
-//           <div>Type: ${d.type.charAt(0).toUpperCase() + d.type.slice(1)}</div>
-//           <div>Strength: ${d.strength.toFixed(4)}</div>
-//           <div>Inhibitor: ${(d.data.avg_inhibitor || 0).toFixed(4)}</div>
-//           <div>Promoter: ${(d.data.avg_promoter || 0).toFixed(4)}</div>
-//           <div>Unknown: ${(d.data.avg_unknown || 0).toFixed(4)}</div>
-//         `)
+//             <div class="font-bold text-blue-300 mb-2">${typeof d.source === "object" ? d.source.name || d.source.id : d.source} → ${typeof d.target === "object" ? d.target.name || d.target.id : d.target}</div>
+//             <div class="space-y-1">
+//               <div>Type: <span class="font-semibold">${d.type.charAt(0).toUpperCase() + d.type.slice(1)}</span></div>
+//               <div>Strength: <span class="font-semibold">${d.strength.toFixed(4)}</span></div>
+//               <div>Inhibitor: <span class="font-semibold">${(d.data.avg_inhibitor || 0).toFixed(4)}</span></div>
+//               <div>Promoter: <span class="font-semibold">${(d.data.avg_promoter || 0).toFixed(4)}</span></div>
+//             </div>
+//           `)
 
 //         tooltip.style("left", event.pageX + 10 + "px").style("top", event.pageY - 10 + "px")
 //       })
 //       .on("mouseout", function (event, d) {
 //         d3.select(this)
-//           .attr("stroke-opacity", isLinkHighlighted(d) ? 0.7 : 0.1)
-//           .attr("stroke-width", d.width)
+//           .attr("stroke-opacity", isLinkHighlighted(d) ? 0.8 : 0.15)
+//           .attr("stroke-width", Math.max(1, d.width * 0.8))
 //         d3.selectAll(".network-tooltip").remove()
 //       })
 
-//     // Create nodes with proper data binding
+//     // Create nodes with enhanced sizing and styling
 //     const nodeGroup = g.append("g").attr("class", "nodes")
 //     const node = nodeGroup
 //       .selectAll("circle")
-//       .data(filteredNodes, (d) => d.id) // Use key function for proper data binding
+//       .data(filteredNodes, (d) => d.id)
 //       .enter()
 //       .append("circle")
 //       .attr("r", (d) => {
-//         // Size based on connections and type
-//         const baseSize = d.type === "biomarker" ? 12 : 8
-//         const connectionBonus = Math.min(8, d.connections * 1.5)
-//         return baseSize + connectionBonus
+//         // Enhanced size calculation based on importance
+//         const baseSize = d.type === "biomarker" ? 8 : 6
+//         const importanceBonus = Math.min(12, Math.sqrt(d.importance) * 2)
+//         return baseSize + importanceBonus
 //       })
-//       .attr("fill", (d) => (d.type === "biomarker" ? "#9ecae1" : "#fdae6b"))
+//       .attr("fill", (d) => {
+//         // Enhanced colors with better contrast
+//         if (d.type === "biomarker") {
+//           return d.connections > 5 ? "#3b82f6" : "#93c5fd" // Blue gradient
+//         } else {
+//           return d.connections > 5 ? "#f97316" : "#fdba74" // Orange gradient
+//         }
+//       })
 //       .attr("stroke", "#fff")
 //       .attr("stroke-width", 2)
-//       .attr("opacity", (d) => (isHighlighted(d.id) ? 1 : 0.2))
+//       .attr("opacity", (d) => (isHighlighted(d.id) ? 1 : 0.3))
 //       .style("cursor", "pointer")
 //       .on("mouseover", function (event, d) {
 //         d3.select(this).attr("stroke", "#333").attr("stroke-width", 3)
@@ -588,12 +599,11 @@
 //         d3.select(this).attr("stroke", "#fff").attr("stroke-width", 2)
 //       })
 //       .on("click", (event, d) => {
-//         // Handle disease selection for highlighting
 //         if (d.type === "disease") {
 //           if (selectedNetworkDisease === d.id) {
-//             setSelectedNetworkDisease(null) // Deselect if clicking same disease
+//             setSelectedNetworkDisease(null)
 //           } else {
-//             setSelectedNetworkDisease(d.id) // Select new disease
+//             setSelectedNetworkDisease(d.id)
 //           }
 //         }
 
@@ -610,7 +620,7 @@
 //         }
 //       })
 
-//     // Add drag behavior
+//     // Enhanced drag behavior
 //     const drag = d3
 //       .drag()
 //       .on("start", (event, d) => {
@@ -628,37 +638,39 @@
 
 //     node.call(drag)
 
-//     // Add labels with proper data binding
+//     // Enhanced labels with better positioning
 //     const labelGroup = g.append("g").attr("class", "labels")
 //     const labels = labelGroup
 //       .selectAll("text")
-//       .data(filteredNodes, (d) => d.id) // Use key function for proper data binding
+//       .data(
+//         filteredNodes.filter((d) => showLabels && d.connections >= labelThreshold[0]),
+//         (d) => d.id,
+//       )
 //       .enter()
 //       .append("text")
 //       .text((d) => {
-//         const name = d.name.length > 12 ? d.name.substring(0, 12) + "..." : d.name
+//         const name = d.name.length > 15 ? d.name.substring(0, 15) + "..." : d.name
 //         return name
 //       })
-//       .attr("font-size", "9px")
-//       .attr("font-weight", "bold")
+//       .attr("font-size", (d) => Math.max(8, Math.min(12, 8 + d.connections * 0.5)))
+//       .attr("font-weight", "600")
 //       .attr("text-anchor", "middle")
 //       .attr("dy", (d) => {
-//         const baseSize = d.type === "biomarker" ? 12 : 8
-//         const connectionBonus = Math.min(8, d.connections * 1.5)
-//         return baseSize + connectionBonus + 15
+//         const baseSize = d.type === "biomarker" ? 8 : 6
+//         const importanceBonus = Math.min(12, Math.sqrt(d.importance) * 2)
+//         return baseSize + importanceBonus + 18
 //       })
-//       .attr("fill", "#374151")
-//       .attr("opacity", (d) => (isHighlighted(d.id) ? 1 : 0.3))
+//       .attr("fill", "#1f2937")
+//       .attr("opacity", (d) => (isHighlighted(d.id) ? 1 : 0.4))
 //       .style("pointer-events", "none")
+//       .style("text-shadow", "1px 1px 2px rgba(255,255,255,0.8)")
 
-//     // Create or restart simulation with new data
+//     // Enhanced simulation with better forces
 //     let newSimulation
 //     if (simulation) {
-//       // Stop existing simulation
 //       simulation.stop()
 //     }
 
-//     // Create fresh simulation with current filtered data
 //     newSimulation = d3
 //       .forceSimulation(filteredNodes)
 //       .force(
@@ -667,29 +679,52 @@
 //           .forceLink(filteredLinks)
 //           .id((d) => d.id)
 //           .distance((d) => {
-//             // Vary distance based on connection strength
-//             return 80 + (1 - d.strength) * 100
+//             // Dynamic distance based on node importance and spacing setting
+//             const baseDistance = nodeSpacing[0]
+//             const importanceFactor = 1 - (d.importance / 100) * 0.3 // Reduce distance for important connections
+//             return baseDistance * importanceFactor
 //           })
-//           .strength(0.4),
+//           .strength(0.3), // Reduced strength for less aggressive pulling
 //       )
 //       .force(
 //         "charge",
 //         d3.forceManyBody().strength((d) => {
-//           // Stronger repulsion for highly connected nodes
-//           return -200 - d.connections * 20
+//           // Enhanced repulsion based on importance
+//           const baseRepulsion = -300
+//           const importanceMultiplier = 1 + d.importance / 50
+//           return baseRepulsion * importanceMultiplier
 //         }),
 //       )
 //       .force("center", d3.forceCenter(width / 2, height / 2))
 //       .force(
 //         "collision",
-//         d3.forceCollide().radius((d) => {
-//           const baseSize = d.type === "biomarker" ? 12 : 8
-//           const connectionBonus = Math.min(8, d.connections * 1.5)
-//           return baseSize + connectionBonus + 5
-//         }),
+//         d3
+//           .forceCollide()
+//           .radius((d) => {
+//             const baseSize = d.type === "biomarker" ? 8 : 6
+//             const importanceBonus = Math.min(12, Math.sqrt(d.importance) * 2)
+//             return baseSize + importanceBonus + 8 // Extra padding
+//           })
+//           .strength(0.8), // Strong collision detection
 //       )
-//       .force("x", d3.forceX(width / 2).strength(0.1))
-//       .force("y", d3.forceY(height / 2).strength(0.1))
+//       .force("x", d3.forceX(width / 2).strength(0.05)) // Weaker centering
+//       .force("y", d3.forceY(height / 2).strength(0.05))
+
+//     // Add clustering force if enabled
+//     if (clusterSimilar) {
+//       newSimulation.force("cluster", (alpha) => {
+//         filteredNodes.forEach((d) => {
+//           const cluster = d.group
+//           const clusterNodes = filteredNodes.filter((n) => n.group === cluster)
+//           if (clusterNodes.length > 1) {
+//             const centerX = d3.mean(clusterNodes, (n) => n.x || 0)
+//             const centerY = d3.mean(clusterNodes, (n) => n.y || 0)
+//             d.vx += (centerX - d.x) * alpha * 0.1
+//             d.vy += (centerY - d.y) * alpha * 0.1
+//           }
+//         })
+//       })
+//     }
 
 //     // Update positions on simulation tick
 //     newSimulation.on("tick", () => {
@@ -704,40 +739,49 @@
 //       labels.attr("x", (d) => d.x).attr("y", (d) => d.y)
 //     })
 
-//     // Start the simulation
 //     newSimulation.alpha(1).restart()
 //     setSimulation(newSimulation)
-//     setIsRunning(true)
 
-//     // Cleanup function
 //     return () => {
 //       if (newSimulation) {
 //         newSimulation.stop()
 //       }
 //       d3.selectAll(".network-tooltip").remove()
 //     }
-//   }, [filteredNodes, filteredLinks, selectedNetworkDisease, width, height])
+//   }, [
+//     filteredNodes,
+//     filteredLinks,
+//     selectedNetworkDisease,
+//     width,
+//     height,
+//     nodeSpacing,
+//     showLabels,
+//     labelThreshold,
+//     clusterSimilar,
+//     highlightMode,
+//   ])
 
 //   // Update opacity when selectedNetworkDisease changes
 //   useEffect(() => {
 //     if (!svgRef.current) return
 
 //     const svg = d3.select(svgRef.current)
-
-//     // Helper functions
 //     const getSourceId = (d) => (typeof d.source === "object" ? d.source.id : d.source)
 //     const getTargetId = (d) => (typeof d.target === "object" ? d.target.id : d.target)
 
 //     const isHighlighted = (nodeId) => {
 //       if (!selectedNetworkDisease) return true
-//       return (
-//         nodeId === selectedNetworkDisease ||
-//         filteredLinks.some(
-//           (link) =>
-//             (getSourceId(link) === nodeId && getTargetId(link) === selectedNetworkDisease) ||
-//             (getTargetId(link) === nodeId && getSourceId(link) === selectedNetworkDisease),
+//       if (highlightMode === "neighbors") {
+//         return (
+//           nodeId === selectedNetworkDisease ||
+//           filteredLinks.some(
+//             (link) =>
+//               (getSourceId(link) === nodeId && getTargetId(link) === selectedNetworkDisease) ||
+//               (getTargetId(link) === nodeId && getSourceId(link) === selectedNetworkDisease),
+//           )
 //         )
-//       )
+//       }
+//       return nodeId === selectedNetworkDisease
 //     }
 
 //     const isLinkHighlighted = (link) => {
@@ -747,37 +791,32 @@
 //       return sourceId === selectedNetworkDisease || targetId === selectedNetworkDisease
 //     }
 
-//     // Update node opacity
 //     svg
 //       .selectAll("circle")
 //       .transition()
 //       .duration(300)
-//       .attr("opacity", (d) => (isHighlighted(d.id) ? 1 : 0.2))
+//       .attr("opacity", (d) => (isHighlighted(d.id) ? 1 : 0.3))
 
-//     // Update link opacity
 //     svg
 //       .selectAll("line")
 //       .transition()
 //       .duration(300)
-//       .attr("stroke-opacity", (d) => (isLinkHighlighted(d) ? 0.7 : 0.1))
+//       .attr("stroke-opacity", (d) => (isLinkHighlighted(d) ? 0.8 : 0.15))
 
-//     // Update label opacity
 //     svg
 //       .selectAll("text")
 //       .transition()
 //       .duration(300)
-//       .attr("opacity", (d) => (isHighlighted(d.id) ? 1 : 0.3))
-//   }, [selectedNetworkDisease, filteredLinks])
+//       .attr("opacity", (d) => (isHighlighted(d.id) ? 1 : 0.4))
+//   }, [selectedNetworkDisease, filteredLinks, highlightMode])
 
 //   const handleReset = () => {
 //     if (simulation) {
-//       // Clear all fixed positions
 //       filteredNodes.forEach((node) => {
 //         node.fx = null
 //         node.fy = null
 //       })
 //       simulation.alpha(1).restart()
-//       setIsRunning(true)
 //     }
 //   }
 
@@ -795,20 +834,23 @@
 //     setSelectedDisease("")
 //     setSelectedBiomarker("")
 //     setConnectionType("all")
-//     setStrengthThreshold(0)
+//     setStrengthThreshold([0])
 //     setShowOnlyConnected(true)
 //     setSelectedNetworkDisease(null)
+//     setNodeSearchTerm("")
 //   }
 
-//   // Get unique values for dropdowns - FIXED
+//   // Get unique values for dropdowns
 //   const diseases = Array.from(new Set(allLinks.map((l) => (typeof l.target === "object" ? l.target.id : l.target))))
 //   const biomarkers = Array.from(new Set(allLinks.map((l) => (typeof l.source === "object" ? l.source.id : l.source))))
 
+//   const currentWidth = isFullscreen ? window.innerWidth - 100 : width
+//   const currentHeight = isFullscreen ? window.innerHeight - 200 : height
+
 //   return (
-//     <div className="relative">
-//       {/* Collapsible Filter Panel */}
-//       <div className="absolute top-4 left-4 z-10 bg-white/95 backdrop-blur-sm rounded-lg border border-slate-200 shadow-lg">
-//         {/* Filter Header */}
+//     <div className={`relative ${isFullscreen ? "fixed inset-0 z-50 bg-white p-4" : ""}`}>
+//       {/* Enhanced Filter Panel */}
+//       <div className="absolute top-4 left-4 z-10 bg-white/95 backdrop-blur-sm rounded-lg border border-slate-200 shadow-lg max-w-sm">
 //         <div className="p-3 border-b border-slate-200">
 //           <Button
 //             variant="ghost"
@@ -818,25 +860,36 @@
 //           >
 //             <div className="flex items-center gap-2">
 //               <Filter className="h-4 w-4" />
-//               Network Filters
+//               Network Controls
 //             </div>
 //             {isFiltersOpen ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
 //           </Button>
 //         </div>
 
-//         {/* Collapsible Filter Content */}
 //         {isFiltersOpen && (
-//           <div className="p-4 max-w-xs">
+//           <div className="p-4 space-y-4 max-h-96 overflow-y-auto">
+//             {/* Search */}
+//             <div>
+//               <label className="block text-xs font-medium text-slate-700 mb-1">Search Nodes</label>
+//               <div className="relative">
+//                 <Search className="absolute left-2 top-2 h-4 w-4 text-slate-400" />
+//                 <input
+//                   type="text"
+//                   placeholder="Search biomarkers or diseases..."
+//                   value={nodeSearchTerm}
+//                   onChange={(e) => setNodeSearchTerm(e.target.value)}
+//                   className="w-full pl-8 pr-3 py-2 text-xs border border-slate-300 rounded focus:ring-2 focus:ring-blue-500"
+//                 />
+//               </div>
+//             </div>
+
+//             {/* Focus Controls */}
 //             <div className="space-y-3">
-//               {/* Disease Filter */}
 //               <div>
 //                 <label className="block text-xs font-medium text-slate-700 mb-1">Focus Disease</label>
 //                 <select
 //                   value={selectedDisease}
-//                   onChange={(e) => {
-//                     console.log("Disease selected:", e.target.value)
-//                     setSelectedDisease(e.target.value)
-//                   }}
+//                   onChange={(e) => setSelectedDisease(e.target.value)}
 //                   className="w-full p-2 text-xs border border-slate-300 rounded focus:ring-2 focus:ring-blue-500"
 //                 >
 //                   <option value="">All Diseases</option>
@@ -848,15 +901,11 @@
 //                 </select>
 //               </div>
 
-//               {/* Biomarker Filter */}
 //               <div>
 //                 <label className="block text-xs font-medium text-slate-700 mb-1">Focus Biomarker</label>
 //                 <select
 //                   value={selectedBiomarker}
-//                   onChange={(e) => {
-//                     console.log("Biomarker selected:", e.target.value)
-//                     setSelectedBiomarker(e.target.value)
-//                   }}
+//                   onChange={(e) => setSelectedBiomarker(e.target.value)}
 //                   className="w-full p-2 text-xs border border-slate-300 rounded focus:ring-2 focus:ring-blue-500"
 //                 >
 //                   <option value="">All Biomarkers</option>
@@ -867,84 +916,133 @@
 //                   ))}
 //                 </select>
 //               </div>
-
-//               {/* Connection Type Filter */}
-//               <div>
-//                 <label className="block text-xs font-medium text-slate-700 mb-1">Connection Type</label>
-//                 <select
-//                   value={connectionType}
-//                   onChange={(e) => setConnectionType(e.target.value)}
-//                   className="w-full p-2 text-xs border border-slate-300 rounded focus:ring-2 focus:ring-blue-500"
-//                 >
-//                   <option value="all">All Types</option>
-//                   <option value="inhibitor">Inhibitor Only</option>
-//                   <option value="promoter">Promoter Only</option>
-//                   <option value="unknown">Unknown Only</option>
-//                 </select>
-//               </div>
-
-//               {/* Strength Threshold */}
-//               <div>
-//                 <label className="block text-xs font-medium text-slate-700 mb-1">
-//                   Min Strength ({strengthThreshold.toFixed(3)})
-//                 </label>
-//                 <input
-//                   type="range"
-//                   min="0"
-//                   max="0.1"
-//                   step="0.001"
-//                   value={strengthThreshold}
-//                   onChange={(e) => setStrengthThreshold(Number(e.target.value))}
-//                   className="w-full"
-//                 />
-//               </div>
-
-//               {/* Show Only Connected */}
-//               <div>
-//                 <label className="flex items-center gap-2 text-xs">
-//                   <input
-//                     type="checkbox"
-//                     checked={showOnlyConnected}
-//                     onChange={(e) => setShowOnlyConnected(e.target.checked)}
-//                     className="rounded"
-//                   />
-//                   Show only connected nodes
-//                 </label>
-//               </div>
-
-//               {/* Clear Filters */}
-//               <Button variant="outline" size="sm" onClick={clearFilters} className="w-full text-xs">
-//                 Clear All Filters
-//               </Button>
 //             </div>
 
-//             {/* Filter Summary */}
-//             <div className="mt-3 pt-3 border-t border-slate-200 text-xs text-slate-600">
+//             {/* Connection Filters */}
+//             <div>
+//               <label className="block text-xs font-medium text-slate-700 mb-1">Connection Type</label>
+//               <select
+//                 value={connectionType}
+//                 onChange={(e) => setConnectionType(e.target.value)}
+//                 className="w-full p-2 text-xs border border-slate-300 rounded focus:ring-2 focus:ring-blue-500"
+//               >
+//                 <option value="all">All Types</option>
+//                 <option value="inhibitor">Inhibitor Only</option>
+//                 <option value="promoter">Promoter Only</option>
+//                 <option value="unknown">Unknown Only</option>
+//               </select>
+//             </div>
+
+//             {/* Strength Threshold */}
+//             <div>
+//               <label className="block text-xs font-medium text-slate-700 mb-2">
+//                 Min Strength: {strengthThreshold[0].toFixed(3)}
+//               </label>
+//               <Slider
+//                 value={strengthThreshold}
+//                 onValueChange={setStrengthThreshold}
+//                 max={0.1}
+//                 min={0}
+//                 step={0.001}
+//                 className="w-full"
+//               />
+//             </div>
+
+//             {/* Layout Controls */}
+//             <div className="border-t pt-3">
+//               <h4 className="text-xs font-semibold text-slate-700 mb-2 flex items-center gap-1">
+//                 <Settings className="h-3 w-3" />
+//                 Layout Settings
+//               </h4>
+
+//               <div className="space-y-3">
+//                 <div>
+//                   <label className="block text-xs font-medium text-slate-700 mb-2">
+//                     Node Spacing: {nodeSpacing[0]}px
+//                   </label>
+//                   <Slider
+//                     value={nodeSpacing}
+//                     onValueChange={setNodeSpacing}
+//                     max={300}
+//                     min={50}
+//                     step={10}
+//                     className="w-full"
+//                   />
+//                 </div>
+
+//                 <div>
+//                   <label className="block text-xs font-medium text-slate-700 mb-2">
+//                     Label Threshold: {labelThreshold[0]} connections
+//                   </label>
+//                   <Slider
+//                     value={labelThreshold}
+//                     onValueChange={setLabelThreshold}
+//                     max={10}
+//                     min={0}
+//                     step={1}
+//                     className="w-full"
+//                   />
+//                 </div>
+
+//                 <div className="flex items-center justify-between">
+//                   <label className="text-xs font-medium text-slate-700">Show Labels</label>
+//                   <Switch checked={showLabels} onCheckedChange={setShowLabels} />
+//                 </div>
+
+//                 <div className="flex items-center justify-between">
+//                   <label className="text-xs font-medium text-slate-700">Cluster Similar</label>
+//                   <Switch checked={clusterSimilar} onCheckedChange={setClusterSimilar} />
+//                 </div>
+
+//                 <div className="flex items-center justify-between">
+//                   <label className="text-xs font-medium text-slate-700">Connected Only</label>
+//                   <Switch checked={showOnlyConnected} onCheckedChange={setShowOnlyConnected} />
+//                 </div>
+//               </div>
+//             </div>
+
+//             {/* Clear Filters */}
+//             <Button variant="outline" size="sm" onClick={clearFilters} className="w-full text-xs">
+//               Clear All Filters
+//             </Button>
+
+//             {/* Stats */}
+//             <div className="border-t pt-3 text-xs text-slate-600">
 //               <div>
 //                 Showing: {filteredNodes.length} nodes, {filteredLinks.length} edges
 //               </div>
 //               {selectedNetworkDisease && (
 //                 <div className="mt-1 text-blue-600 font-medium">Highlighting: {selectedNetworkDisease}</div>
 //               )}
-//               <div className="mt-1">
-//                 <span className="inline-block w-2 h-2 bg-green-400 rounded mr-1"></span>
-//                 {filteredLinks.filter((l) => l.type === "inhibitor").length} inhibitor
-//               </div>
-//               <div>
-//                 <span className="inline-block w-2 h-2 bg-yellow-400 rounded mr-1"></span>
-//                 {filteredLinks.filter((l) => l.type === "promoter").length} promoter
-//               </div>
-//               <div>
-//                 <span className="inline-block w-2 h-2 bg-gray-400 rounded mr-1"></span>
-//                 {filteredLinks.filter((l) => l.type === "unknown").length} unknown
+//               <div className="mt-2 space-y-1">
+//                 <div className="flex items-center gap-2">
+//                   <div className="w-2 h-2 bg-green-500 rounded"></div>
+//                   <span>{filteredLinks.filter((l) => l.type === "inhibitor").length} inhibitor</span>
+//                 </div>
+//                 <div className="flex items-center gap-2">
+//                   <div className="w-2 h-2 bg-amber-500 rounded"></div>
+//                   <span>{filteredLinks.filter((l) => l.type === "promoter").length} promoter</span>
+//                 </div>
+//                 <div className="flex items-center gap-2">
+//                   <div className="w-2 h-2 bg-gray-400 rounded"></div>
+//                   <span>{filteredLinks.filter((l) => l.type === "unknown").length} unknown</span>
+//                 </div>
 //               </div>
 //             </div>
 //           </div>
 //         )}
 //       </div>
 
-//       {/* Controls - Removed Play/Pause */}
+//       {/* Enhanced Controls */}
 //       <div className="absolute top-4 right-4 z-10 flex gap-2">
+//         <Button
+//           variant="outline"
+//           size="sm"
+//           onClick={() => setIsFullscreen(!isFullscreen)}
+//           className="bg-white/90 backdrop-blur-sm"
+//         >
+//           {isFullscreen ? <Minimize2 className="h-4 w-4" /> : <Maximize2 className="h-4 w-4" />}
+//         </Button>
 //         <Button variant="outline" size="sm" onClick={handleReset} className="bg-white/90 backdrop-blur-sm">
 //           <RotateCcw className="h-4 w-4" />
 //         </Button>
@@ -957,9 +1055,14 @@
 //       </div>
 
 //       {/* Network SVG */}
-//       <svg ref={svgRef} width={width} height={height} className="border border-slate-200 rounded-lg bg-white" />
+//       <svg
+//         ref={svgRef}
+//         width={currentWidth}
+//         height={currentHeight}
+//         className="border border-slate-200 rounded-lg bg-white"
+//       />
 
-//       {/* Node Info Panel */}
+//       {/* Enhanced Node Info Panel */}
 //       {selectedNode && (
 //         <div className="absolute bottom-4 left-4 bg-white/95 backdrop-blur-sm p-4 rounded-lg border border-slate-200 shadow-lg max-w-xs">
 //           <h4 className="font-semibold text-slate-800 mb-2">{selectedNode.name}</h4>
@@ -967,7 +1070,16 @@
 //             <div className="flex items-center gap-2 mb-2">
 //               <div
 //                 className="w-3 h-3 rounded-full"
-//                 style={{ backgroundColor: selectedNode.type === "biomarker" ? "#9ecae1" : "#fdae6b" }}
+//                 style={{
+//                   backgroundColor:
+//                     selectedNode.type === "biomarker"
+//                       ? selectedNode.connections > 5
+//                         ? "#3b82f6"
+//                         : "#93c5fd"
+//                       : selectedNode.connections > 5
+//                         ? "#f97316"
+//                         : "#fdba74",
+//                 }}
 //               />
 //               <span className="capitalize">{selectedNode.type}</span>
 //             </div>
@@ -977,6 +1089,9 @@
 //               </div>
 //               <div>
 //                 Total Strength: <span className="font-semibold">{selectedNode.totalStrength?.toFixed(4)}</span>
+//               </div>
+//               <div>
+//                 Importance: <span className="font-semibold">{selectedNode.importance?.toFixed(2)}</span>
 //               </div>
 //               <div className="text-slate-500 mt-2">
 //                 {selectedNode.type === "biomarker"
@@ -993,26 +1108,36 @@
 //         <h4 className="font-semibold text-slate-800 mb-3 text-sm">Legend</h4>
 //         <div className="space-y-2 text-xs">
 //           <div className="flex items-center gap-2">
-//             <div className="w-4 h-4 rounded-full" style={{ backgroundColor: "#9ecae1" }} />
-//             <span>Biomarkers (size = connections)</span>
+//             <div className="w-4 h-4 rounded-full bg-blue-500" />
+//             <span>High-connection biomarkers</span>
 //           </div>
 //           <div className="flex items-center gap-2">
-//             <div className="w-3 h-3 rounded-full" style={{ backgroundColor: "#fdae6b" }} />
-//             <span>Diseases (size = connections)</span>
+//             <div className="w-3 h-3 rounded-full bg-blue-300" />
+//             <span>Low-connection biomarkers</span>
 //           </div>
 //           <div className="flex items-center gap-2">
-//             <div className="w-4 h-1 rounded" style={{ backgroundColor: "#a1d99b" }} />
+//             <div className="w-4 h-4 rounded-full bg-orange-500" />
+//             <span>High-connection diseases</span>
+//           </div>
+//           <div className="flex items-center gap-2">
+//             <div className="w-3 h-3 rounded-full bg-orange-300" />
+//             <span>Low-connection diseases</span>
+//           </div>
+//           <div className="flex items-center gap-2">
+//             <div className="w-4 h-1 rounded bg-green-500" />
 //             <span>Inhibitor (width = strength)</span>
 //           </div>
 //           <div className="flex items-center gap-2">
-//             <div className="w-4 h-1 rounded" style={{ backgroundColor: "#fed976" }} />
+//             <div className="w-4 h-1 rounded bg-amber-500" />
 //             <span>Promoter (width = strength)</span>
 //           </div>
 //           <div className="flex items-center gap-2">
-//             <div className="w-4 h-1 rounded" style={{ backgroundColor: "#9ca3af" }} />
+//             <div className="w-4 h-1 rounded bg-gray-400" />
 //             <span>Unknown (width = strength)</span>
 //           </div>
-//           <div className="text-slate-500 mt-2 text-xs">💡 Click on disease nodes to highlight their connections</div>
+//           <div className="text-slate-500 mt-2 text-xs">
+//             💡 Use filters to focus • Click diseases to highlight • Drag nodes to explore
+//           </div>
 //         </div>
 //       </div>
 //     </div>
@@ -2014,8 +2139,10 @@
 //               <div className="bg-white rounded-lg border border-slate-200 p-6 shadow-sm">
 //                 <div className="flex items-center justify-between mb-6">
 //                   <div>
-//                     <h3 className="text-2xl font-bold text-slate-800">Network Analysis</h3>
-//                     <p className="text-slate-600 mt-1">Interactive biomarker-disease network for "{symptom}"</p>
+//                     <h3 className="text-2xl font-bold text-slate-800">Enhanced Network Analysis</h3>
+//                     <p className="text-slate-600 mt-1">
+//                       Interactive biomarker-disease network with improved readability for "{symptom}"
+//                     </p>
 //                   </div>
 //                   <Badge variant="secondary" className="text-sm">
 //                     {biomarkers.length} Biomarkers • {diseases.length} Diseases
@@ -2140,16 +2267,16 @@
 //                       </Card>
 //                     </div>
 
-//                     {/* Main Network Chart */}
+//                     {/* Enhanced Network Chart */}
 //                     <Card className="overflow-hidden border-slate-200 shadow-lg">
 //                       <CardHeader className="bg-gradient-to-r from-slate-700 to-blue-700 text-white">
 //                         <CardTitle className="flex items-center gap-3 text-xl">
 //                           <Network className="h-6 w-6" />
 //                           <div>
-//                             <div>Biomarker-Disease Network</div>
+//                             <div>Enhanced Biomarker-Disease Network</div>
 //                             <div className="text-slate-200 text-sm font-normal mt-1">
-//                               Interactive force-directed graph • Use filters to focus • Click disease nodes to highlight
-//                               • Drag nodes to explore
+//                               Improved readability with advanced filtering • Adjustable node spacing • Smart clustering
+//                               • Enhanced interactions
 //                             </div>
 //                           </div>
 //                         </CardTitle>
@@ -2159,94 +2286,97 @@
 //                       </CardContent>
 //                     </Card>
 
-//                     {/* Network Insights */}
+//                     {/* Enhanced Network Insights */}
 //                     <Card className="bg-gradient-to-br from-slate-50 to-blue-50 border-slate-200 shadow-lg">
 //                       <CardHeader className="bg-gradient-to-r from-slate-700 to-blue-700 text-white">
 //                         <CardTitle className="flex items-center gap-3">
 //                           <Info className="h-6 w-6" />
-//                           Network Insights & Interpretation
+//                           Enhanced Network Features & Interpretation
 //                         </CardTitle>
 //                       </CardHeader>
 //                       <CardContent className="p-6">
 //                         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
 //                           <div className="space-y-4">
-//                             <h4 className="font-semibold text-slate-800 text-lg mb-3">Network Structure</h4>
+//                             <h4 className="font-semibold text-slate-800 text-lg mb-3">Readability Improvements</h4>
 //                             <div className="space-y-3">
 //                               <div className="p-4 bg-blue-50 rounded-lg border border-blue-200">
 //                                 <div className="flex items-center gap-2 mb-2">
-//                                   <Network className="h-4 w-4 text-blue-600" />
-//                                   <span className="font-medium text-blue-800">Node Distribution</span>
+//                                   <Settings className="h-4 w-4 text-blue-600" />
+//                                   <span className="font-medium text-blue-800">Adjustable Node Spacing</span>
 //                                 </div>
 //                                 <div className="text-sm text-blue-700">
-//                                   <div className="font-semibold">Biomarkers (blue): {biomarkers.length} nodes</div>
-//                                   <div className="font-semibold">Diseases (peach): {diseases.length} nodes</div>
-//                                   <div className="mt-1 text-xs">
-//                                     Node size reflects connection count - larger nodes are more connected
-//                                   </div>
+//                                   Control node separation distance to reduce congestion and improve visual clarity
 //                                 </div>
 //                               </div>
 
 //                               <div className="p-4 bg-green-50 rounded-lg border border-green-200">
 //                                 <div className="flex items-center gap-2 mb-2">
-//                                   <TrendingDown className="h-4 w-4 text-green-600" />
-//                                   <span className="font-medium text-green-800">Inhibitory Connections</span>
+//                                   <Search className="h-4 w-4 text-green-600" />
+//                                   <span className="font-medium text-green-800">Smart Search & Filtering</span>
 //                                 </div>
 //                                 <div className="text-sm text-green-700">
-//                                   Green edges represent suppressive relationships where biomarkers inhibit disease
-//                                   progression or symptoms.
+//                                   Search nodes by name and apply multiple filters to focus on specific relationships
 //                                 </div>
 //                               </div>
 
 //                               <div className="p-4 bg-amber-50 rounded-lg border border-amber-200">
 //                                 <div className="flex items-center gap-2 mb-2">
-//                                   <TrendingUp className="h-4 w-4 text-amber-600" />
-//                                   <span className="font-medium text-amber-800">Promotional Connections</span>
+//                                   <Eye className="h-4 w-4 text-amber-600" />
+//                                   <span className="font-medium text-amber-800">Adaptive Label Display</span>
 //                                 </div>
 //                                 <div className="text-sm text-amber-700">
-//                                   Yellow edges indicate enhancing relationships where biomarkers promote or correlate
-//                                   with disease states.
+//                                   Labels shown only for highly connected nodes to reduce visual clutter
+//                                 </div>
+//                               </div>
+
+//                               <div className="p-4 bg-purple-50 rounded-lg border border-purple-200">
+//                                 <div className="flex items-center gap-2 mb-2">
+//                                   <Network className="h-4 w-4 text-purple-600" />
+//                                   <span className="font-medium text-purple-800">Smart Clustering</span>
+//                                 </div>
+//                                 <div className="text-sm text-purple-700">
+//                                   Similar nodes are grouped together using connection patterns for better organization
 //                                 </div>
 //                               </div>
 //                             </div>
 //                           </div>
 
 //                           <div className="space-y-4">
-//                             <h4 className="font-semibold text-slate-800 text-lg mb-3">Clinical Applications</h4>
+//                             <h4 className="font-semibold text-slate-800 text-lg mb-3">Enhanced Interactions</h4>
 //                             <div className="space-y-3 text-sm">
 //                               <div className="flex items-start gap-3 p-3 bg-indigo-50 rounded-lg">
 //                                 <div className="w-2 h-2 bg-indigo-500 rounded-full mt-2 flex-shrink-0"></div>
 //                                 <div>
-//                                   <span className="font-medium text-indigo-800">Hub Analysis:</span>
+//                                   <span className="font-medium text-indigo-800">Fullscreen Mode:</span>
 //                                   <span className="text-indigo-700 ml-1">
-//                                     Highly connected biomarkers may serve as key therapeutic targets or diagnostic
-//                                     markers
-//                                   </span>
-//                                 </div>
-//                               </div>
-//                               <div className="flex items-start gap-3 p-3 bg-purple-50 rounded-lg">
-//                                 <div className="w-2 h-2 bg-purple-500 rounded-full mt-2 flex-shrink-0"></div>
-//                                 <div>
-//                                   <span className="font-medium text-purple-800">Pathway Discovery:</span>
-//                                   <span className="text-purple-700 ml-1">
-//                                     Network clusters may reveal shared biological pathways or mechanisms
+//                                     Expand network to full screen for detailed analysis of complex relationships
 //                                   </span>
 //                                 </div>
 //                               </div>
 //                               <div className="flex items-start gap-3 p-3 bg-teal-50 rounded-lg">
 //                                 <div className="w-2 h-2 bg-teal-500 rounded-full mt-2 flex-shrink-0"></div>
 //                                 <div>
-//                                   <span className="font-medium text-teal-800">Drug Development:</span>
+//                                   <span className="font-medium text-teal-800">Dynamic Highlighting:</span>
 //                                   <span className="text-teal-700 ml-1">
-//                                     Strong inhibitory connections suggest potential therapeutic intervention points
+//                                     Click disease nodes to highlight their connections and fade unrelated elements
 //                                   </span>
 //                                 </div>
 //                               </div>
 //                               <div className="flex items-start gap-3 p-3 bg-rose-50 rounded-lg">
 //                                 <div className="w-2 h-2 bg-rose-500 rounded-full mt-2 flex-shrink-0"></div>
 //                                 <div>
-//                                   <span className="font-medium text-rose-800">Risk Assessment:</span>
+//                                   <span className="font-medium text-rose-800">Enhanced Tooltips:</span>
 //                                   <span className="text-rose-700 ml-1">
-//                                     Promotional connections may indicate biomarkers for disease risk stratification
+//                                     Detailed information on hover with improved styling and comprehensive data
+//                                   </span>
+//                                 </div>
+//                               </div>
+//                               <div className="flex items-start gap-3 p-3 bg-orange-50 rounded-lg">
+//                                 <div className="w-2 h-2 bg-orange-500 rounded-full mt-2 flex-shrink-0"></div>
+//                                 <div>
+//                                   <span className="font-medium text-orange-800">Improved Physics:</span>
+//                                   <span className="text-orange-700 ml-1">
+//                                     Better force simulation with collision detection and importance-based positioning
 //                                   </span>
 //                                 </div>
 //                               </div>
@@ -2295,7 +2425,7 @@
 //             {tooltip.avg_inhibitor !== null && tooltip.avg_inhibitor !== undefined && (
 //               <div className="flex items-center justify-between">
 //                 <div className="flex items-center gap-2">
-//                   <div className="w-3 h-3 rounded" style={{ backgroundColor: "#a1d99b" }}></div>
+//                   <div className="w-3 h-3 rounded" style={{ backgroundColor: "#10b981" }}></div>
 //                   <span>Inhibitor:</span>
 //                 </div>
 //                 <span className="font-semibold">
@@ -2306,7 +2436,7 @@
 //             {tooltip.avg_promoter !== null && tooltip.avg_promoter !== undefined && (
 //               <div className="flex items-center justify-between">
 //                 <div className="flex items-center gap-2">
-//                   <div className="w-3 h-3 rounded" style={{ backgroundColor: "#fed976" }}></div>
+//                   <div className="w-3 h-3 rounded" style={{ backgroundColor: "#f59e0b" }}></div>
 //                   <span>Promoter:</span>
 //                 </div>
 //                 <span className="font-semibold">
@@ -2329,23 +2459,23 @@
 //         </div>
 //       )}
 
-//       {/* Legend */}
+//       {/* Enhanced Legend */}
 //       <div className="bg-white border-t border-slate-200 px-6 py-4">
 //         <div className="flex items-center justify-center gap-8 text-sm">
 //           <div className="flex items-center gap-2">
-//             <div className="w-4 h-4 rounded-full" style={{ backgroundColor: "#9ecae1" }}></div>
-//             <span className="font-medium">Biomarkers</span>
+//             <div className="w-4 h-4 rounded-full bg-blue-500"></div>
+//             <span className="font-medium">High-connection biomarkers</span>
 //           </div>
 //           <div className="flex items-center gap-2">
-//             <div className="w-4 h-4 rounded-full" style={{ backgroundColor: "#fdae6b" }}></div>
-//             <span className="font-medium">Diseases</span>
+//             <div className="w-3 h-3 rounded-full bg-orange-500"></div>
+//             <span className="font-medium">High-connection diseases</span>
 //           </div>
 //           <div className="flex items-center gap-2">
-//             <div className="w-4 h-1 rounded" style={{ backgroundColor: "#a1d99b" }}></div>
+//             <div className="w-4 h-1 rounded bg-green-500"></div>
 //             <span className="font-medium">Antagonist</span>
 //           </div>
 //           <div className="flex items-center gap-2">
-//             <div className="w-4 h-1 rounded" style={{ backgroundColor: "#fed976" }}></div>
+//             <div className="w-4 h-1 rounded bg-amber-500"></div>
 //             <span className="font-medium">Agonist</span>
 //           </div>
 //           <div className="flex items-center gap-2">
@@ -2354,7 +2484,7 @@
 //           </div>
 //           <div className="text-slate-500">
 //             <Info className="h-4 w-4 inline mr-1" />
-//             Click diseases/circles to analyze • Hover for details
+//             Enhanced with smart filtering, adjustable spacing, and improved interactions
 //           </div>
 //         </div>
 //       </div>
@@ -3523,18 +3653,19 @@ export default function SymptomInfographic() {
       // Parse the cleaned JSON
       const data = JSON.parse(cleanedText)
 
-      // Extract the result array if it exists
-      const resultArray = data.result || data
+      // Return the entire response object, but filter the result array if it exists
+      if (data.result && Array.isArray(data.result)) {
+        data.result = data.result.filter((item) => {
+          // Check if the item has meaningful data
+          return (
+            item.Insights ||
+            (item.Direction && item.Direction !== "null") ||
+            (item["Quantified Changes"] && item["Quantified Changes"] !== "null")
+          )
+        })
+      }
 
-      // Filter out entries with mostly empty values
-      return resultArray.filter((item) => {
-        // Check if the item has meaningful data
-        return (
-          item.Insights ||
-          (item.Direction && item.Direction !== "null") ||
-          (item["Quantified Changes"] && item["Quantified Changes"] !== "null")
-        )
-      })
+      return data
     } catch (error) {
       console.error("Error processing API response:", error)
       throw new Error(`Failed to process API response: ${error.message}`)
@@ -3874,6 +4005,7 @@ export default function SymptomInfographic() {
       // Use the new handler function
       const processedData = await handleApiResponse(response)
       console.log("Processed API data:", processedData)
+
       setApiData(processedData)
     } catch (error) {
       console.error("Error fetching data from API:", error)
@@ -4381,9 +4513,9 @@ export default function SymptomInfographic() {
 
                               {!isLoading && !apiError && (
                                 <div className="p-6">
-                                  {apiData && apiData.length > 0 ? (
+                                  {apiData && apiData.result && apiData.result.length > 0 ? (
                                     <div className="space-y-4 max-h-96 overflow-y-auto">
-                                      {apiData.map((item, index) => {
+                                      {apiData.result.map((item, index) => {
                                         // Skip items with no meaningful data
                                         if (!item.Insights && !item.Direction && !item["Quantified Changes"]) {
                                           return null
@@ -4397,9 +4529,9 @@ export default function SymptomInfographic() {
                                             <div className="bg-gradient-to-r from-slate-100 to-blue-100 p-4 rounded-t-lg">
                                               <div className="flex items-center justify-between">
                                                 <h6 className="font-medium text-slate-800">
-                                                  {item.Matched_Biomarker || "Cyclooxygenase"} Analysis
+                                                  {item.Matched_Biomarker || "Research"} Analysis
                                                 </h6>
-                                                {item.Direction && (
+                                                {item.Direction && item.Direction !== "null" && (
                                                   <Badge
                                                     variant={
                                                       item.Direction?.includes("Increase") ? "destructive" : "default"
@@ -4426,32 +4558,36 @@ export default function SymptomInfographic() {
                                               )}
 
                                               {/* Quantified Changes */}
-                                              {item["Quantified Changes"] && (
+                                              {item["Quantified Changes"] && item["Quantified Changes"] !== "null" && (
                                                 <div>
                                                   <h6 className="text-sm font-semibold text-slate-700 mb-1 flex items-center gap-1">
                                                     <BarChart3 className="h-3 w-3" />
                                                     Quantified Changes
                                                   </h6>
-                                                  <p className="text-sm text-slate-600 bg-green-50 p-2 rounded">
-                                                    {item["Quantified Changes"]}
-                                                  </p>
+                                                  <div
+                                                    className="text-sm text-slate-600 bg-green-50 p-2 rounded"
+                                                    dangerouslySetInnerHTML={{
+                                                      __html: item["Quantified Changes"].replace(/\n/g, "<br>"),
+                                                    }}
+                                                  />
                                                 </div>
                                               )}
 
                                               {/* Comparison to Reference */}
-                                              {item["Comparison to Reference"] && (
-                                                <div>
-                                                  <h6 className="text-sm font-semibold text-slate-700 mb-1">
-                                                    Reference Comparison
-                                                  </h6>
-                                                  <p className="text-sm text-slate-600 bg-amber-50 p-2 rounded">
-                                                    {item["Comparison to Reference"]}
-                                                  </p>
-                                                </div>
-                                              )}
+                                              {item["Comparison to Reference"] &&
+                                                item["Comparison to Reference"] !== "null" && (
+                                                  <div>
+                                                    <h6 className="text-sm font-semibold text-slate-700 mb-1">
+                                                      Reference Comparison
+                                                    </h6>
+                                                    <p className="text-sm text-slate-600 bg-amber-50 p-2 rounded">
+                                                      {item["Comparison to Reference"]}
+                                                    </p>
+                                                  </div>
+                                                )}
 
                                               {/* Reference Point */}
-                                              {item["Reference Point"] && (
+                                              {item["Reference Point"] && item["Reference Point"] !== "null" && (
                                                 <div>
                                                   <h6 className="text-sm font-semibold text-slate-700 mb-1">
                                                     Reference Point
@@ -4492,6 +4628,144 @@ export default function SymptomInfographic() {
                             </div>
                           </div>
                         </div>
+
+                        {/* NEW: Full-width Quantified Biomarker Section */}
+                        {apiData && apiData.quantified_biomarker && (
+                          <div className="mt-6 bg-gradient-to-br from-indigo-50 to-purple-50 rounded-lg border border-indigo-200 shadow-sm">
+                            <div className="bg-gradient-to-r from-indigo-600 to-purple-600 text-white p-4 rounded-t-lg">
+                              <h5 className="text-xl font-semibold flex items-center gap-2">
+                                <BarChart3 className="h-6 w-6" />
+                                Quantified Biomarker Expression Data
+                              </h5>
+                              <p className="text-indigo-100 text-sm mt-1">
+                                Detailed expression patterns and clinical insights for{" "}
+                                {apiData.quantified_biomarker.Biomarker || "this biomarker"}
+                              </p>
+                            </div>
+
+                            <div className="p-6 space-y-6">
+                              {/* Biomarker Info Header */}
+                              <div className="flex items-center justify-between bg-white rounded-lg p-4 border border-indigo-200">
+                                <div>
+                                  <h6 className="text-lg font-bold text-indigo-900">
+                                    {apiData.quantified_biomarker.Biomarker || "Unknown Biomarker"}
+                                  </h6>
+                                  <p className="text-indigo-600 text-sm">Expression Analysis</p>
+                                </div>
+                                <Badge variant="outline" className="border-indigo-300 text-indigo-700 bg-indigo-50">
+                                  Quantified Data Available
+                                </Badge>
+                              </div>
+
+                              {/* Expression Data Grid */}
+                              <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                                {/* Disease-specific Expression */}
+                                <div className="bg-white rounded-lg p-5 border border-slate-200 shadow-sm">
+                                  <h6 className="font-semibold text-slate-800 mb-3 flex items-center gap-2">
+                                    <Activity className="h-4 w-4 text-blue-600" />
+                                    Disease Expression Pattern
+                                  </h6>
+                                  {Object.entries(apiData.quantified_biomarker).map(([key, value]) => {
+                                    // Skip non-disease fields
+                                    if (["Biomarker", "Healthy Skin", "Notes/Insights", "Sources"].includes(key))
+                                      return null
+
+                                    return (
+                                      <div key={key} className="mb-4 last:mb-0">
+                                        <div className="font-medium text-slate-700 mb-2">{key}</div>
+                                        <div
+                                          className="text-sm text-slate-600 bg-blue-50 p-3 rounded border-l-4 border-blue-400"
+                                          dangerouslySetInnerHTML={{
+                                            __html: value.replace(/\n/g, "<br>").replace(/<br>/g, "<br>"),
+                                          }}
+                                        />
+                                      </div>
+                                    )
+                                  })}
+                                </div>
+
+                                {/* Healthy Control & Insights */}
+                                <div className="space-y-4">
+                                  {/* Healthy Skin Comparison */}
+                                  {apiData.quantified_biomarker["Healthy Skin"] && (
+                                    <div className="bg-white rounded-lg p-5 border border-slate-200 shadow-sm">
+                                      <h6 className="font-semibold text-slate-800 mb-3 flex items-center gap-2">
+                                        <TrendingDown className="h-4 w-4 text-green-600" />
+                                        Healthy Control
+                                      </h6>
+                                      <div className="text-sm text-slate-600 bg-green-50 p-3 rounded border-l-4 border-green-400">
+                                        {apiData.quantified_biomarker["Healthy Skin"]}
+                                      </div>
+                                    </div>
+                                  )}
+
+                                  {/* Clinical Insights */}
+                                  {apiData.quantified_biomarker["Notes/Insights"] && (
+                                    <div className="bg-white rounded-lg p-5 border border-slate-200 shadow-sm">
+                                      <h6 className="font-semibold text-slate-800 mb-3 flex items-center gap-2">
+                                        <Info className="h-4 w-4 text-amber-600" />
+                                        Clinical Insights
+                                      </h6>
+                                      <div className="text-sm text-slate-600 bg-amber-50 p-3 rounded border-l-4 border-amber-400">
+                                        {apiData.quantified_biomarker["Notes/Insights"]}
+                                      </div>
+                                    </div>
+                                  )}
+                                </div>
+                              </div>
+
+                              {/* Research Sources */}
+                              {apiData.quantified_biomarker.Sources && (
+                                <div className="bg-white rounded-lg p-5 border border-slate-200 shadow-sm">
+                                  <h6 className="font-semibold text-slate-800 mb-3 flex items-center gap-2">
+                                    <Search className="h-4 w-4 text-purple-600" />
+                                    Research Sources
+                                  </h6>
+                                  <div className="space-y-2">
+                                    {apiData.quantified_biomarker.Sources.split("\n")
+                                      .filter((source) => source.trim())
+                                      .map((source, index) => (
+                                        <div
+                                          key={index}
+                                          className="flex items-center gap-2 p-2 bg-purple-50 rounded border border-purple-200"
+                                        >
+                                          <div className="w-2 h-2 bg-purple-500 rounded-full flex-shrink-0"></div>
+                                          <a
+                                            href={source.trim()}
+                                            target="_blank"
+                                            rel="noopener noreferrer"
+                                            className="text-sm text-purple-700 hover:text-purple-900 hover:underline flex-1 break-all"
+                                          >
+                                            {source.trim()}
+                                          </a>
+                                          <Button
+                                            variant="ghost"
+                                            size="sm"
+                                            className="h-6 w-6 p-0 text-purple-600 hover:text-purple-800"
+                                            onClick={() => window.open(source.trim(), "_blank")}
+                                          >
+                                            <svg
+                                              className="h-3 w-3"
+                                              fill="none"
+                                              stroke="currentColor"
+                                              viewBox="0 0 24 24"
+                                            >
+                                              <path
+                                                strokeLinecap="round"
+                                                strokeLinejoin="round"
+                                                strokeWidth={2}
+                                                d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14"
+                                              />
+                                            </svg>
+                                          </Button>
+                                        </div>
+                                      ))}
+                                  </div>
+                                </div>
+                              )}
+                            </div>
+                          </div>
+                        )}
                       </div>
                     )}
                   </div>
