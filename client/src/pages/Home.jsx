@@ -304,7 +304,8 @@ import {
   Search,
   Eye,
 } from "lucide-react"
-
+import netwrok from '../assets/network.png'
+import mapping from '../assets/mapping.png'
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import BiomarkerDiseaseSearch from "@/components/BiomarkerDiseaseSearch"
@@ -314,13 +315,13 @@ const ImageCarousel = () => {
 
   const slides = [
     {
-      image: "/src/assets/network.png",
+      image: netwrok,
       title: "Advanced Network Visualization",
       description:
         "Interactive biomarker-disease relationship networks with smart clustering and adaptive positioning for comprehensive analysis.",
     },
     {
-      image: "/src/assets/mapping.png",
+      image: mapping,
       title: "Intelligent Data Mapping",
       description:
         "Sophisticated data integration and mapping algorithms that connect multi-dimensional biomarker data across research domains.",
