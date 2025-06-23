@@ -4,6 +4,7 @@ import { Link } from "react-router-dom"
 import { FlaskRoundIcon as Flask, Menu, X, Shield, Users, FileText, Phone } from "lucide-react"
 import { Outlet } from "react-router-dom"
 import { useState } from "react"
+import logo from '../assets/Insimine.svg'
 
 export default function Layout() {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
@@ -13,12 +14,12 @@ export default function Layout() {
       <header className="sticky top-0 z-50 w-full border-b border-slate-200 bg-white/95 backdrop-blur-md supports-[backdrop-filter]:bg-white/90 shadow-sm">
         <div className="container flex h-20 items-center px-4 md:px-6">
           {/* Logo */}
-          <div className="flex items-center gap-3">
-            <div className="p-2 bg-gradient-to-br from-blue-600 to-indigo-700 rounded-xl shadow-lg">
+          <div className="flex items-center gap-5">
+            
               <a href="/" rel="noopener noreferrer">
-              <Flask className="h-7 w-7 text-white" />
+              <img src={logo} alt="logo" className="h-8 w-8"/>
               </a>
-            </div>
+            
             <div className="flex flex-col">
               <span className="font-bold text-xl text-slate-800 tracking-tight">TrialPredict</span>
               <span className="text-xs text-slate-500 font-medium">Clinical Research Platform</span>
