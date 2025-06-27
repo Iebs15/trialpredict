@@ -4,6 +4,7 @@ services:
   frontend:
     build:
       context: ./client
+    container_name: frontend_branch3
     ports:
       - "4002:4002"
     depends_on:
@@ -12,9 +13,9 @@ services:
   backend:
     build:
       context: ./backend
+    container_name: backend_branch3
     ports:
       - "8005:8005"
     environment:
       - FLASK_ENV=development
-    # volumes:
-    #   - ./backend:/app
+    
