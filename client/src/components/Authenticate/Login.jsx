@@ -3,7 +3,6 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Button } from '@/components/ui/button';
 import { useNavigate } from 'react-router-dom';
-import { saveUserData } from '@/lib/db';
 
 function Login({ onSwitchToSignup }) {
     const [email, setEmail] = useState('');
@@ -14,12 +13,15 @@ function Login({ onSwitchToSignup }) {
     const navigate = useNavigate();
     const handleLogin = async (e) => {
         e.preventDefault();
+
         setError('');  // Clear any previous error
+
         try {
             // Send a POST request to the backend
             console.log(import.meta.env.VITE_API_URL)
-            const response = await fetch(`${import.meta.env.VITE_API_URL}:6001/login`, {
+            const response = await fetch(`${import.meta.env.VITE_API_URL}/login`, {
                 method: 'POST',
+                credentials: 'include', 
                 headers: {
                     'Content-Type': 'application/json'
                 },
@@ -27,27 +29,19 @@ function Login({ onSwitchToSignup }) {
                     email,
                     password
                 }),
-                credentials: 'include'
             });
 
             const data = await response.json();
 
             if (response.ok) {
-                setSuccess("Login done !!!");
-                console.log(data);
+                setSuccess(data.user_pharmax_id);
                 setError('');  // Clear error
                 // setSuccessMessage("Sign in successful.");
                 // setErrorMessage("");
-                await saveUserData({
-                    user_salescout_id: data.uuid,
-                    user_salescout_email_id: data.email,
-                    first_name_salescout_user: data.first_name,
-                    last_name_salescout_user: data.last_name,
-                    company_salescout_user: data.company,
-                    user_email_info: data.email_info,
-                    user_designation: data.designation,
-                    user_about: data.about_user
-                });
+                localStorage.setItem('user_pharmax_id', data.user_pharmax_id);
+                // console.log(localStorage.getItem('user_id'));
+                localStorage.setItem('first_name_pharmax_user', data.first_name);
+                // navigate('/bioformulate');
                 navigate('/dashboard');
                 // Redirect or handle successful login
             } else {
@@ -55,13 +49,12 @@ function Login({ onSwitchToSignup }) {
             }
 
         } catch (error) {
-            console.log(error);
             setError("An error occurred. Please try again.");
         }
     };
 
     return (
-        <div className='flex flex-col mt-[-50px] rounded-[30px] bg-white w-[400px] h-[480px] shadow-2xl z-10 justify-center '>
+        <div className='flex flex-col mt-[-50px] rounded-[30px] bg-white w-[400px] h-[480px] shadow-custom z-10 justify-center '>
             <h1 className="font-poppins text-2xl font-medium leading-12 text-center">Log in</h1>
             <p className='font-poppins text-base font-normal leading-6 text-center text-[#666666]'>
                 Don't have an account?{' '}

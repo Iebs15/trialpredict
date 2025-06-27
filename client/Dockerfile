@@ -15,6 +15,6 @@ RUN npm run build
 RUN npm install -g serve
 
 # Serve the build directory
-CMD ["serve", "-s", "dist", "-l", "4001"]
+CMD ["serve", "-s", "dist", "-l", "4002"]
 
-EXPOSE 4001
+EXPOSE 4002
