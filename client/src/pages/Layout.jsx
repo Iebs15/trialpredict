@@ -21,7 +21,7 @@ export default function Layout() {
               </a>
             
             <div className="flex flex-col">
-              <span className="font-bold text-xl text-slate-800 tracking-tight">BiomSight</span>
+              <span className="font-bold text-xl text-slate-800 tracking-tight">InsiBiom</span>
               <span className="text-xs text-slate-500 font-medium">Clinical Research Platform</span>
             </div>
           </div>
@@ -131,7 +131,7 @@ export default function Layout() {
                   <img src={logo} alt="logo" className="h-8 w-8"/>
                 </div>
                 <div className="flex flex-col">
-                  <span className="font-bold text-lg text-slate-800">BiomSight</span>
+                  <span className="font-bold text-lg text-slate-800">InsiBiom</span>
                   <span className="text-xs text-slate-500 font-medium">Clinical Research Platform</span>
                 </div>
               </div>
@@ -193,7 +193,7 @@ export default function Layout() {
           {/* Bottom Bar */}
           <div className="mt-12 pt-8 border-t border-slate-200 flex flex-col md:flex-row items-center justify-between gap-4">
             <p className="text-sm text-slate-500">
-              © 2025 BiomSight. All rights reserved. | Advancing precision medicine through data science.
+              © 2025 InsiBiom. All rights reserved. | Advancing precision medicine through data science.
             </p>
             <nav className="flex gap-6">
               <Link className="text-sm text-slate-500 hover:text-slate-700 transition-colors" to="#">

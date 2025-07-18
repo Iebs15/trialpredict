@@ -642,7 +642,7 @@ const TestimonialsSection = () => {
   const testimonials = [
     {
       quote:
-        "BiomSight has revolutionized our drug discovery process. The biomarker insights have accelerated our research by 40%.",
+        "InsiBiom has revolutionized our drug discovery process. The biomarker insights have accelerated our research by 40%.",
       author: "Dr. Sarah Chen",
       role: "Chief Scientific Officer",
       company: "BioTech Innovations",
@@ -679,7 +679,7 @@ const TestimonialsSection = () => {
             What Our Partners Say
           </h2>
           <p className="text-xl text-slate-300 max-w-3xl mx-auto">
-            Leading pharmaceutical companies and research institutions trust BiomSight for their most critical
+            Leading pharmaceutical companies and research institutions trust InsiBiom for their most critical
             research initiatives.
           </p>
         </div>
@@ -856,7 +856,7 @@ export default function Home() {
                 </h1>
 
                 <p className="max-w-[700px] text-lg md:text-xl leading-relaxed font-medium">
-                  BiomSight empowers pharmaceutical researchers and clinicians with comprehensive
+                  InsiBiom empowers pharmaceutical researchers and clinicians with comprehensive
                   biomarker–disease–drug relationship analysis, predictive clinical outcomes, and evidence-based
                   treatment optimization through advanced data science and machine learning.
                 </p>
@@ -1106,7 +1106,7 @@ export default function Home() {
                 Accelerate Your Research Today
               </h2>
               <p className="text-emerald-100 text-lg md:text-xl leading-relaxed font-medium">
-                Join leading pharmaceutical companies and research institutions using BiomSight to drive breakthrough
+                Join leading pharmaceutical companies and research institutions using InsiBiom to drive breakthrough
                 discoveries and improve patient outcomes.
               </p>
             </div>
