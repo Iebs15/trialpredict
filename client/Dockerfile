@@ -9,6 +9,9 @@ RUN npm install
 
 # Build the React app
 COPY . .
+ARG VITE_API_URL
+ENV VITE_API_URL=${VITE_API_URL}
+RUN echo "Using API URL: $VITE_API_URL"
 RUN npm run build
 
 # Install a simple static file server (like serve)
