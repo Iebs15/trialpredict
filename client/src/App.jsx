@@ -4,7 +4,7 @@ import BiomarkerNetworkPage from "./pages/BiomarkerNetworkPage"
 import SymptomInfographic from "./pages/SymptomInfographic"
 import DiseaseInfographic from "./pages/DiseaseInfographic"
 import Layout from "./pages/Layout"
-
+import BiomarkerComparison from "./components/BiomarkerComparison"
 
 export default function App() {
   return (
@@ -14,6 +14,7 @@ export default function App() {
           <Route path="/network" element={<BiomarkerNetworkPage />} />
           <Route path="/disease-targets" element={<DiseaseInfographic />} />
           <Route path="/symptom-results" element={<SymptomInfographic />} />
+          <Route path="/treatment-comparison" element={<BiomarkerComparison />} />
         </Route>
       </Routes>  )
 }
