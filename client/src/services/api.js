@@ -882,6 +882,59 @@ generateMockDetailedBiomarkerData(biomarkerName, condition, page = 1, size = 20)
     console.error('API Service Error:', errorInfo);
     return errorInfo;
   }
+
+  // Search biomarkers by free-text query (with optional condition filter)
+async searchBiomarkers(query, condition = null, limit = 50) {
+  const cacheKey = this.getCacheKey('search', { query, condition, limit });
+  const cached = this.getCachedData(cacheKey);
+  if (cached) return { ...cached, cached: true };
+
+  try {
+    const params = new URLSearchParams({ q: query, limit: String(limit) });
+    if (condition) params.set('condition', condition);
+
+    // Try your backend search endpoint; adjust the path if yours differs
+    const result = await this.apiCall(`/api/biomarkers/search?${params.toString()}`);
+
+    // Normalize response shape
+    const normalized = {
+      success: result?.success !== false,
+      results: result?.results || result?.data || result?.hits || [],
+      total: result?.total ??
+             (result?.results?.length ?? result?.data?.length ?? 0)
+    };
+
+    this.setCachedData(cacheKey, normalized);
+    return normalized;
+  } catch (error) {
+    console.error('Failed to search biomarkers:', error);
+
+    // Fallback: if query is a biomarker name, reuse the detailed data route
+    try {
+      const maybeBiomarker = (query || '').trim();
+      const dataRes = await this.getBiomarkerData(
+        maybeBiomarker,
+        condition || null,
+        1,
+        limit
+      );
+      const fallback = {
+        success: true,
+        results: dataRes?.data || [],
+        total: dataRes?.total_count || (dataRes?.data?.length ?? 0),
+        fallback: true,
+        error: error.message
+      };
+      this.setCachedData(cacheKey, fallback);
+      return fallback;
+    } catch (e) {
+      const empty = { success: true, results: [], total: 0, fallback: true, error: error.message };
+      this.setCachedData(cacheKey, empty);
+      return empty;
+    }
+  }
+}
+
 }
 
 // Export singleton instance

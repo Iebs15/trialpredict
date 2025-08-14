@@ -1,8 +1,6 @@
 from flask import Flask, request, abort, jsonify
 from flask_cors import CORS
-import io
 import time
-import base64
 import pandas as pd
 import numpy as np
 from openpyxl import load_workbook
@@ -32,7 +30,7 @@ app = Flask(__name__)
 
 # Update CORS configuration
 CORS(app, resources={
-    r"/api/*": {
+    r"/*": {
         "origins": ["http://localhost:5173", "http://127.0.0.1:5173", "https://trialpredict.onrender.com"],
         "methods": ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
         "allow_headers": ["Content-Type", "Authorization"]
