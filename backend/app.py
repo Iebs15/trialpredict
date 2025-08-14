@@ -1,772 +1,3 @@
-# from flask import Flask, request, abort, jsonify
-# from flask_cors import CORS
-# import io
-# import time
-# import base64
-# import pandas as pd
-# import numpy as np
-# from openpyxl import load_workbook
-# from elasticsearch import Elasticsearch
-# from collections import defaultdict
-# from datetime import datetime
-# import os
-
-# # ---- Cache utilities (your own functions) ----
-# from cache_utiities import load_from_cache, save_to_cache, clean_old_caches
-
-
-# # ---- Disease‐logic function (your own file) ----
-# # from new_disease_logic import process_disease_data
-# from from_disease import process_disease_landscape, get_top_biomarkers
-
-# from from_symptom import process_symptom_data, process_symptom_landscape, get_top_biomarkers_for_disease
-
-# # ---- Top‐5 biomarker utility from utilities.py ----
-# # from utilities import get_top_biomarkers_from_df
-
-# import matplotlib
-# matplotlib.use("Agg")  # non‐interactive backend for plotting
-# import matplotlib.pyplot as plt
-# from matplotlib.patches import Patch
-
-
-# app = Flask(__name__)
-# CORS(app)
-
-
-# # ────────────────────────────────
-
-# VALID_CATEGORIES = ["inhibitor", "promoter"]
-# # ────────────────────────────────
-# # Elasticsearch configuration
-# ES_HOST = os.getenv('ELASTICSEARCH_HOST', 'https://a25cbf64ca0d465a9d3eb5d9479121b6.eastus2.azure.elastic-cloud.com:443')
-# ES_INDEX = 'trialpredict_biomarkers'
-
-# # ─────── /symptom Route ────────
-# @app.route("/symptom", methods=["GET"])
-# def symptom_page():
-#     """
-#     GET /symptom?name=<symptom>
-#     Returns JSON:
-#       {
-#         "symptom": <str>,
-#         "nested_assoc": <dict>,
-#         "plots": {
-#             "Inhibitor": <base64‐png>,
-#             "Promoter":  <base64‐png>,
-#             "Unknown":   <base64‐png>
-#         }
-#       }
-#     """
-#     t0 = time.time()
-#     clean_old_caches(days=2)
-#     t1 = time.time()
-
-#     symptom = request.args.get("name", "").strip()
-#     if not symptom:
-#         abort(400, description="Missing required query parameter: name")
-#     t2 = time.time()
-
-#     # 1) Load or build nested association
-#     nested_assoc = load_from_cache(symptom)
-#     if nested_assoc is None:
-#         try:
-#             nested_assoc = process_symptom_landscape(symptom)
-#         except ValueError as e:
-#             abort(400, description=str(e))
-#         except Exception as e:
-#             abort(500, description=f"Internal error: {e}")
-#         save_to_cache(symptom, nested_assoc)
-#     t3 = time.time()
-
-#     # 2) Collect raw scores (dicts by category) for this symptom
-#     score_cache_key = f"score_{symptom}"
-#     scores_data = load_from_cache(score_cache_key)
-#     if scores_data is None:
-#         try:
-#             biomarker_names, inh_dict, prm_dict = process_symptom_data(symptom)
-#             save_to_cache(score_cache_key, (biomarker_names, inh_dict, prm_dict))
-#         except Exception as e:
-#             abort(500, description=f"Error collecting scores: {e}")
-#     else:
-#         biomarker_names, inh_dict, prm_dict = scores_data
-#     t4 = time.time()
-
-#     # Build plot data instead of PNGs
-#     plot_data = {}
-#     for category_label, cat_data in zip(VALID_CATEGORIES, [inh_dict, prm_dict]):
-#         data_points = []
-#         for bio in biomarker_names:
-#             if bio in cat_data and cat_data[bio]:
-#                 disease_scores = [
-#                     {"disease": d, "score": round(score, 4)}
-#                     for d, score in sorted(cat_data[bio].items(), key=lambda it: -it[1])
-#                 ]
-#                 data_points.append({
-#                     "biomarker": bio,
-#                     "diseases": disease_scores,
-#                     "total_score": round(sum(item["score"] for item in disease_scores), 4)
-#                 })
-#         plot_data[category_label] = data_points
-
-    
-#     t5 = time.time()
-#     print(
-#         f"Timings: clean_cache {t1-t0:.2f}s, parse_args {t2-t1:.2f}s, "
-#         f"build_assoc {t3-t2:.2f}s, collect_scores {t4-t3:.2f}s, plots {t5-t4:.2f}s"
-#     )
-#     return jsonify({
-#         "symptom": symptom,
-#         "nested_assoc": nested_assoc,
-#         "plot_data": plot_data
-#     })
-
-
-# # ───── /disease_landscape Route ─────
-# @app.route("/disease_landscape", methods=["GET"])
-# def disease_landscape():
-#     """
-#     GET /disease_landscape?disease=<name>
-#     Returns the JSON produced by process_disease_data(disease).
-#     """
-#     t0 = time.time()
-#     disease_name = request.args.get("disease", "").strip()
-#     if not disease_name:
-#         return jsonify({"error": "Missing 'disease' query parameter"}), 400
-#     t1 = time.time()
-
-#     result = process_disease_landscape(disease_name)
-#     ## store the result in cache
-#     cache_key = f"disease_{disease_name}"
-#     save_to_cache(cache_key, result)
-#     # need to remove the 'symptoms' key from the result
-#     if "symptoms" in result:
-#         del result["symptoms"]
-#     t2 = time.time()
-#     if isinstance(result, dict) and "error" in result:
-#         return jsonify(result), 404
-#     t3 = time.time()
-
-#     print(
-#         f"Timings: parse_args {t1-t0:.2f}s, process_data {t2-t1:.2f}s, return {t3-t2:.2f}s"
-#     )
-#     return jsonify(result)
-
-
-# # ─────── /biomarkers Route ───────
-# @app.route("/biomarkers_disease", methods=["GET"])
-# def biomarkers():
-#     """
-#     GET /biomarkers_disease?disease=<disease>&symptom=<symptom>&top_n=<n>
-#     Returns the top_n biomarkers and their average scores for the given disease and symptom.
-#     """
-#     disease  = request.args.get("disease",  "").strip()
-#     symptom  = request.args.get("symptom",  "").strip()
-#     top_n    = int(request.args.get("top_n", 5))
-
-#     if not disease or not symptom:
-#         return jsonify({"error": "Missing 'disease' or 'symptom' query parameter"}), 400
-
-#     # 1) Try cache
-#     cache_key = f"top_biomarkers_{disease}_{symptom}_{top_n}"
-#     cached = load_from_cache(cache_key)
-#     if cached:
-#         return jsonify(cached)
-
-#     # 2) Load full disease data
-#     cache_key_disease = f"disease_{disease}"
-#     disease_data = load_from_cache(cache_key_disease)
-#     if not disease_data or "error" in disease_data:
-#         return jsonify({"error": f"Disease '{disease}' not found"}), 404
-
-#     # 3) Check symptom validity
-#     valid_symptoms = {s 
-#         for bm in disease_data.values()
-#         for s in bm.keys()
-#     }
-#     if symptom not in valid_symptoms:
-#         return jsonify({
-#             "error":
-#                 f"Symptom '{symptom}' not valid for disease '{disease}'. "
-#                 f"Valid symptoms: {sorted(valid_symptoms)}"
-#         }), 400
-
-#     # 4) Compute top biomarkers
-#     try:
-#         result = get_top_biomarkers(disease_data, symptom, top_n)
-#     except Exception as e:
-#         return jsonify({"error": str(e)}), 500
-
-#     # 5) Save + return
-#     save_to_cache(cache_key, result)
-#     return jsonify(result)
-        
-# # ─────── /biomarkers_symptom Route ───────
-# @app.route("/biomarkers_symptom", methods=["GET"])
-# def biomarkers_symptom():
-#     """
-#     GET /biomarkers_symptom?symptom=<symptom>&disease=<disease>&top_n=<n>
-#     Returns the top_n biomarkers and their average scores for the given symptom and disease.
-#     """
-#     symptom = request.args.get("symptom", "").strip()
-#     disease = request.args.get("disease", "").strip()
-#     try:
-#         top_n = int(request.args.get("top_n", 5))
-#     except ValueError:
-#         return jsonify({"error": "'top_n' must be an integer"}), 400
-
-#     # 1) Basic validation
-#     if not symptom or not disease:
-#         return jsonify({"error": "Missing 'symptom' or 'disease' query parameter"}), 400
-
-#     # 2) Attempt to return from cache
-#     cache_key = f"top_biomarkers_{symptom}_{disease}_{top_n}"
-#     cached = load_from_cache(cache_key)
-#     if cached:
-#         return jsonify(cached)
-
-#     # 3) Load the symptom_data (must be a dict of biomarker → { disease_name: metrics, … })
-#     symptom_data = load_from_cache(symptom)
-#     if not symptom_data or "error" in symptom_data:
-#         return jsonify({"error": f"Symptom '{symptom}' not found"}), 404
-
-#     # 4) (Optional) Validate that this disease actually appears under your symptom_data
-#     #    This depends on how you structured `symptom_data`, but if you stored a list:
-#     valid_diseases = symptom_data.get("diseases", [])
-#     if valid_diseases and disease not in valid_diseases:
-#         return jsonify({
-#             "error": f"Disease '{disease}' not valid for symptom '{symptom}'. "
-#                      f"Valid diseases: {valid_diseases}"
-#         }), 400
-
-#     # 5) Compute top biomarkers
-#     try:
-#         result = get_top_biomarkers_for_disease(disease, symptom_data, top_n)
-#     except Exception as e:
-#         return jsonify({"error": str(e)}), 500
-
-#     # 6) Cache + return
-#     save_to_cache(cache_key, result)
-#     return jsonify(result)
-
-
-
-# @app.route('/ligmaballs', methods=["POST"])
-# def match_disease_and_biomarker():
-#     disease_name = request.json.get('disease', '').strip()
-#     biomarker = request.json.get('biomarker', '').strip()
-#     symptom_data = request.json.get('symptom_data', {})
-
-#     if not disease_name or not biomarker:
-#         return {"error": "Disease name and biomarker are required."}, 400
-
-#     excel_file_path = './Test_output_o4_mini_new.xlsx'
-#     quantified_biomarker_file_path = './Quantified_Biomarkers_AK.xlsx'
-
-#     # Load files
-#     df = pd.read_excel(excel_file_path)
-#     df_qb = pd.read_excel(quantified_biomarker_file_path)
-
-#     relevant_diseases = []
-#     if "nested_assoc" in symptom_data:
-#         for key, value in symptom_data["nested_assoc"].items():
-#             for disease in value:
-#                 if disease_name.lower() in disease.lower():
-#                     relevant_diseases.append(disease)
-
-#     # Proceed even if no relevant diseases found
-#     disease_matches = df[df['Disease_Name'].apply(
-#         lambda x: any(disease.strip().lower() == disease_name.lower() for disease in str(x).split(','))
-#     )] if relevant_diseases else pd.DataFrame()
-
-#     biomarker_match = disease_matches[disease_matches['Biomarker_Mapped'].apply(
-#         lambda x: any(bm.strip().lower() == biomarker.lower() for bm in str(x).split(','))
-#     )] if not disease_matches.empty else pd.DataFrame()
-
-#     def get_matching_biomarker(row_biomarker, biomarker_input):
-#         biomarker_list = [bm.strip() for bm in str(row_biomarker).split(',')]
-#         matching_biomarker = [bm for bm in biomarker_list if bm.lower() == biomarker_input.lower()]
-#         return matching_biomarker[0] if matching_biomarker else ''
-
-#     if not biomarker_match.empty:
-#         biomarker_match['Matched_Biomarker'] = biomarker_match['Biomarker_Mapped'].apply(
-#             lambda x: get_matching_biomarker(x, biomarker)
-#         )
-#         result = biomarker_match[['Matched_Biomarker', 'Reference Point', 'Quantified Changes',
-#                                   'Comparison to Reference', 'Direction', 'Insights']]
-#     else:
-#         result = pd.DataFrame(columns=['Matched_Biomarker', 'Reference Point', 'Quantified Changes',
-#                                        'Comparison to Reference', 'Direction', 'Insights'])
-
-#     # Normalize and match quantified biomarker
-#     df_qb['Biomarker'] = df_qb['Biomarker'].astype(str).str.strip().str.lower()
-#     normalized_input = biomarker.strip().lower()
-#     qb_result = df_qb[df_qb['Biomarker'] == normalized_input]
-#     qb_dict = qb_result.iloc[0].to_dict() if not qb_result.empty else {}
-
-#     return jsonify({
-#         "result": result.to_dict(orient='records'),
-#         "quantified_biomarker": qb_dict
-#     }), 200
-
-
-# # Initialize Elasticsearch client
-# try:
-#     es = Elasticsearch([ES_HOST])
-#     if not es.ping():
-#         app.logger.error("Cannot connect to Elasticsearch")
-#     else:
-#         app.logger.info("Connected to Elasticsearch successfully")
-# except Exception as e:
-#     app.logger.error(f"Elasticsearch connection error: {e}")
-#     es = None
-
-
-
-# class BiomarkerService:
-#     def __init__(self, es_client):
-#         self.es = es_client
-#         self.index = ES_INDEX
-    
-#     def get_all_biomarkers(self):
-#         """Get all unique biomarker names from the index"""
-#         try:
-#             query = {
-#                 "size": 0,
-#                 "aggs": {
-#                     "biomarkers": {
-#                         "terms": {
-#                             "field": "Biomarker Name.keyword",
-#                             "size": 10000
-#                         }
-#                     }
-#                 }
-#             }
-            
-#             response = self.es.search(index=self.index, body=query)
-#             biomarkers = [bucket['key'] for bucket in response['aggregations']['biomarkers']['buckets']]
-            
-#             return {
-#                 'success': True,
-#                 'biomarkers': sorted(biomarkers),
-#                 'count': len(biomarkers)
-#             }
-#         except Exception as e:
-#             app.logger.error(f"Error fetching biomarkers: {e}")
-#             return {'success': False, 'error': str(e)}
-    
-#     def get_conditions(self):
-#         """Get all unique conditions from the index"""
-#         try:
-#             query = {
-#                 "size": 0,
-#                 "aggs": {
-#                     "conditions": {
-#                         "terms": {
-#                             "field": "Condition.keyword",
-#                             "size": 1000
-#                         }
-#                     }
-#                 }
-#             }
-            
-#             response = self.es.search(index=self.index, body=query)
-#             conditions = [bucket['key'] for bucket in response['aggregations']['conditions']['buckets']]
-            
-#             return {
-#                 'success': True,
-#                 'conditions': sorted(conditions),
-#                 'count': len(conditions)
-#             }
-#         except Exception as e:
-#             app.logger.error(f"Error fetching conditions: {e}")
-#             return {'success': False, 'error': str(e)}
-    
-#     def calculate_biomarker_score(self, biomarker_name, condition):
-#         """Calculate score for a biomarker in a specific condition"""
-#         try:
-#             # Get total PDFs for the condition
-#             total_pdfs_query = {
-#                 "size": 0,
-#                 "query": {
-#                     "term": {"Condition.keyword": condition}
-#                 },
-#                 "aggs": {
-#                     "unique_pdfs": {
-#                         "cardinality": {
-#                             "field": "PDF_name.keyword"
-#                         }
-#                     }
-#                 }
-#             }
-            
-#             # Get PDFs containing the biomarker for the condition
-#             biomarker_pdfs_query = {
-#                 "size": 0,
-#                 "query": {
-#                     "bool": {
-#                         "must": [
-#                             {"term": {"Condition.keyword": condition}},
-#                             {"term": {"Biomarker Name.keyword": biomarker_name}}
-#                         ]
-#                     }
-#                 },
-#                 "aggs": {
-#                     "unique_pdfs": {
-#                         "cardinality": {
-#                             "field": "PDF_name.keyword"
-#                         }
-#                     }
-#                 }
-#             }
-            
-#             total_response = self.es.search(index=self.index, body=total_pdfs_query)
-#             biomarker_response = self.es.search(index=self.index, body=biomarker_pdfs_query)
-            
-#             total_pdfs = total_response['aggregations']['unique_pdfs']['value']
-#             biomarker_pdfs = biomarker_response['aggregations']['unique_pdfs']['value']
-            
-#             score = (biomarker_pdfs / total_pdfs) if total_pdfs > 0 else 0
-            
-#             return {
-#                 'success': True,
-#                 'biomarker': biomarker_name,
-#                 'condition': condition,
-#                 'score': round(score, 4),
-#                 'biomarker_pdfs': biomarker_pdfs,
-#                 'total_pdfs': total_pdfs
-#             }
-#         except Exception as e:
-#             app.logger.error(f"Error calculating score for {biomarker_name}: {e}")
-#             return {'success': False, 'error': str(e)}
-    
-#     def get_biomarker_data(self, biomarker_name, condition, page=1, size=20):
-#         """Get all data for a specific biomarker in a condition"""
-#         try:
-#             from_offset = (page - 1) * size
-            
-#             query = {
-#                 "from": from_offset,
-#                 "size": size,
-#                 "query": {
-#                     "bool": {
-#                         "must": [
-#                             {"term": {"Condition.keyword": condition}},
-#                             {"term": {"Biomarker Name.keyword": biomarker_name}}
-#                         ]
-#                     }
-#                 },
-#                 "sort": [
-#                     {"_score": {"order": "desc"}},
-#                     {"PDF_name.keyword": {"order": "asc"}}
-#                 ]
-#             }
-            
-#             response = self.es.search(index=self.index, body=query)
-            
-#             # Get total count
-#             count_query = {
-#                 "query": {
-#                     "bool": {
-#                         "must": [
-#                             {"term": {"Condition.keyword": condition}},
-#                             {"term": {"Biomarker Name.keyword": biomarker_name}}
-#                         ]
-#                     }
-#                 }
-#             }
-#             count_response = self.es.count(index=self.index, body=count_query)
-            
-#             total_count = count_response['count']
-#             documents = [hit['_source'] for hit in response['hits']['hits']]
-            
-#             return {
-#                 'success': True,
-#                 'biomarker': biomarker_name,
-#                 'condition': condition,
-#                 'data': documents,
-#                 'total_count': total_count,
-#                 'page': page,
-#                 'size': size,
-#                 'total_pages': (total_count + size - 1) // size
-#             }
-#         except Exception as e:
-#             app.logger.error(f"Error fetching data for {biomarker_name}: {e}")
-#             return {'success': False, 'error': str(e)}
-    
-#     def compare_treatments(self, treatment1, treatment2):
-#         """Compare two treatments with their biomarkers"""
-#         try:
-#             results = {
-#                 'treatment1': {
-#                     'name': treatment1['name'],
-#                     'condition': treatment1['condition'],
-#                     'biomarkers': []
-#                 },
-#                 'treatment2': {
-#                     'name': treatment2['name'],
-#                     'condition': treatment2['condition'],
-#                     'biomarkers': []
-#                 }
-#             }
-            
-#             # Calculate scores for treatment 1
-#             for biomarker in treatment1['biomarkers']:
-#                 if biomarker['name'].strip():
-#                     score_data = self.calculate_biomarker_score(
-#                         biomarker['name'], 
-#                         treatment1['condition']
-#                     )
-#                     if score_data['success']:
-#                         results['treatment1']['biomarkers'].append(score_data)
-            
-#             # Calculate scores for treatment 2
-#             for biomarker in treatment2['biomarkers']:
-#                 if biomarker['name'].strip():
-#                     score_data = self.calculate_biomarker_score(
-#                         biomarker['name'], 
-#                         treatment2['condition']
-#                     )
-#                     if score_data['success']:
-#                         results['treatment2']['biomarkers'].append(score_data)
-            
-#             # Calculate comparison metrics
-#             comparison_metrics = self._calculate_comparison_metrics(results)
-            
-#             return {
-#                 'success': True,
-#                 'comparison': results,
-#                 'metrics': comparison_metrics
-#             }
-#         except Exception as e:
-#             app.logger.error(f"Error comparing treatments: {e}")
-#             return {'success': False, 'error': str(e)}
-    
-#     def _calculate_comparison_metrics(self, results):
-#         """Calculate comparison metrics between treatments"""
-#         t1_scores = [b['score'] for b in results['treatment1']['biomarkers']]
-#         t2_scores = [b['score'] for b in results['treatment2']['biomarkers']]
-        
-#         t1_avg = sum(t1_scores) / len(t1_scores) if t1_scores else 0
-#         t2_avg = sum(t2_scores) / len(t2_scores) if t2_scores else 0
-        
-#         # Find common biomarkers
-#         t1_biomarkers = set(b['biomarker'] for b in results['treatment1']['biomarkers'])
-#         t2_biomarkers = set(b['biomarker'] for b in results['treatment2']['biomarkers'])
-#         common_biomarkers = t1_biomarkers.intersection(t2_biomarkers)
-        
-#         return {
-#             'treatment1_avg_score': round(t1_avg, 4),
-#             'treatment2_avg_score': round(t2_avg, 4),
-#             'score_difference': round(abs(t1_avg - t2_avg), 4),
-#             'common_biomarkers': list(common_biomarkers),
-#             'common_biomarkers_count': len(common_biomarkers),
-#             'treatment1_unique': list(t1_biomarkers - t2_biomarkers),
-#             'treatment2_unique': list(t2_biomarkers - t1_biomarkers)
-#         }
-    
-#     def search_biomarkers(self, query, condition=None, limit=50):
-#         """Search biomarkers with optional condition filter"""
-#         try:
-#             search_query = {
-#                 "size": limit,
-#                 "query": {
-#                     "bool": {
-#                         "must": [
-#                             {
-#                                 "multi_match": {
-#                                     "query": query,
-#                                     "fields": [
-#                                         "Biomarker Name^2",
-#                                         "Key Outcome",
-#                                         "Treatment_Name"
-#                                     ],
-#                                     "type": "best_fields",
-#                                     "fuzziness": "AUTO"
-#                                 }
-#                             }
-#                         ]
-#                     }
-#                 },
-#                 "highlight": {
-#                     "fields": {
-#                         "Biomarker Name": {},
-#                         "Key Outcome": {},
-#                         "Treatment_Name": {}
-#                     }
-#                 }
-#             }
-            
-#             if condition:
-#                 search_query["query"]["bool"]["must"].append({
-#                     "term": {"Condition.keyword": condition}
-#                 })
-            
-#             response = self.es.search(index=self.index, body=search_query)
-            
-#             results = []
-#             for hit in response['hits']['hits']:
-#                 result = hit['_source'].copy()
-#                 result['_score'] = hit['_score']
-#                 if 'highlight' in hit:
-#                     result['_highlight'] = hit['highlight']
-#                 results.append(result)
-            
-#             return {
-#                 'success': True,
-#                 'results': results,
-#                 'total_hits': response['hits']['total']['value'],
-#                 'query': query
-#             }
-#         except Exception as e:
-#             app.logger.error(f"Error searching biomarkers: {e}")
-#             return {'success': False, 'error': str(e)}
-
-# # Initialize service
-# biomarker_service = BiomarkerService(es) if es else None
-
-# # API Routes
-# @app.route('/api/health', methods=['GET'])
-# def health_check():
-#     """Health check endpoint"""
-#     return jsonify({
-#         'status': 'healthy',
-#         'elasticsearch_connected': es is not None and es.ping(),
-#         'timestamp': datetime.now().isoformat()
-#     })
-
-# @app.route('/api/biomarkers', methods=['GET'])
-# def get_biomarkers():
-#     """Get all available biomarkers"""
-#     if not biomarker_service:
-#         return jsonify({'success': False, 'error': 'Elasticsearch not available'}), 500
-    
-#     result = biomarker_service.get_all_biomarkers()
-#     return jsonify(result)
-
-# @app.route('/api/conditions', methods=['GET'])
-# def get_conditions():
-#     """Get all available conditions"""
-#     if not biomarker_service:
-#         return jsonify({'success': False, 'error': 'Elasticsearch not available'}), 500
-    
-#     result = biomarker_service.get_conditions()
-#     return jsonify(result)
-
-# @app.route('/api/biomarker/score', methods=['POST'])
-# def calculate_score():
-#     """Calculate biomarker score for a condition"""
-#     if not biomarker_service:
-#         return jsonify({'success': False, 'error': 'Elasticsearch not available'}), 500
-    
-#     data = request.get_json()
-#     biomarker_name = data.get('biomarker_name')
-#     condition = data.get('condition')
-    
-#     if not biomarker_name or not condition:
-#         return jsonify({'success': False, 'error': 'biomarker_name and condition are required'}), 400
-    
-#     result = biomarker_service.calculate_biomarker_score(biomarker_name, condition)
-#     return jsonify(result)
-
-# @app.route('/api/biomarker/data', methods=['POST'])
-# def get_biomarker_data():
-#     """Get all data for a biomarker in a condition"""
-#     if not biomarker_service:
-#         return jsonify({'success': False, 'error': 'Elasticsearch not available'}), 500
-    
-#     data = request.get_json()
-#     biomarker_name = data.get('biomarker_name')
-#     condition = data.get('condition')
-#     page = data.get('page', 1)
-#     size = data.get('size', 20)
-    
-#     if not biomarker_name or not condition:
-#         return jsonify({'success': False, 'error': 'biomarker_name and condition are required'}), 400
-    
-#     result = biomarker_service.get_biomarker_data(biomarker_name, condition, page, size)
-#     return jsonify(result)
-
-# @app.route('/api/treatments/compare', methods=['POST'])
-# def compare_treatments():
-#     """Compare two treatments"""
-#     if not biomarker_service:
-#         return jsonify({'success': False, 'error': 'Elasticsearch not available'}), 500
-    
-#     data = request.get_json()
-#     treatment1 = data.get('treatment1')
-#     treatment2 = data.get('treatment2')
-    
-#     if not treatment1 or not treatment2:
-#         return jsonify({'success': False, 'error': 'Both treatments are required'}), 400
-    
-#     result = biomarker_service.compare_treatments(treatment1, treatment2)
-#     return jsonify(result)
-
-# @app.route('/api/search', methods=['POST'])
-# def search_biomarkers():
-#     """Search biomarkers with query"""
-#     if not biomarker_service:
-#         return jsonify({'success': False, 'error': 'Elasticsearch not available'}), 500
-    
-#     data = request.get_json()
-#     query = data.get('query')
-#     condition = data.get('condition')
-#     limit = data.get('limit', 50)
-    
-#     if not query:
-#         return jsonify({'success': False, 'error': 'query is required'}), 400
-    
-#     result = biomarker_service.search_biomarkers(query, condition, limit)
-#     return jsonify(result)
-
-# @app.route('/api/treatment/scores', methods=['POST'])
-# def get_treatment_scores():
-#     """Get scores for all biomarkers in a treatment"""
-#     if not biomarker_service:
-#         return jsonify({'success': False, 'error': 'Elasticsearch not available'}), 500
-    
-#     data = request.get_json()
-#     treatment = data.get('treatment')
-    
-#     if not treatment:
-#         return jsonify({'success': False, 'error': 'treatment is required'}), 400
-    
-#     scores = []
-#     for biomarker in treatment.get('biomarkers', []):
-#         if biomarker.get('name', '').strip():
-#             score_data = biomarker_service.calculate_biomarker_score(
-#                 biomarker['name'], 
-#                 treatment.get('condition', 'Aging')
-#             )
-#             if score_data['success']:
-#                 scores.append(score_data)
-    
-#     return jsonify({
-#         'success': True,
-#         'treatment': treatment,
-#         'scores': scores
-#     })
-
-# @app.errorhandler(404)
-# def not_found(error):
-#     return jsonify({'success': False, 'error': 'Endpoint not found'}), 404
-
-# @app.errorhandler(500)
-# def internal_error(error):
-#     return jsonify({'success': False, 'error': 'Internal server error'}), 500
-
-
-
-
-
-# if __name__ == "__main__":
-#     # By default, Flask runs on http://127.0.0.1:5000
-#     app.run(debug=True)
-
-
-
-
 from flask import Flask, request, abort, jsonify
 from flask_cors import CORS
 import io
@@ -780,7 +11,7 @@ from collections import defaultdict
 from datetime import datetime
 import os
 from dotenv import load_dotenv
-import openai
+from openai import AzureOpenAI
 
 # Load environment variables
 load_dotenv()
@@ -798,8 +29,15 @@ import matplotlib.pyplot as plt
 from matplotlib.patches import Patch
 
 app = Flask(__name__)
-CORS(app)
 
+# Update CORS configuration
+CORS(app, resources={
+    r"/api/*": {
+        "origins": ["http://localhost:5173", "http://127.0.0.1:5173"],
+        "methods": ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+        "allow_headers": ["Content-Type", "Authorization"]
+    }
+})
 # ────────────────────────────────
 VALID_CATEGORIES = ["inhibitor", "promoter"]
 
@@ -807,14 +45,17 @@ VALID_CATEGORIES = ["inhibitor", "promoter"]
 # Elasticsearch configuration with authentication
 ES_ENDPOINT = os.getenv('elasticsearchendpoint', 'https://a25cbf64ca0d465a9d3eb5d9479121b6.eastus2.azure.elastic-cloud.com:443')
 ES_API_KEY = os.getenv('elasticapikey', '')
-ES_INDEX = 'trialpredict_biomarkers'
+ES_INDEX = os.getenv('ES_INDEX', 'trialpredict-biomarker-ci-t')
 
 
 # Add this environment variable loading
-OPENAI_API_KEY = os.getenv('OPENAI_API_KEY', '')
+# OPENAI_API_KEY = os.getenv('OPENAI_API_KEY', '')
+openai_client = AzureOpenAI(
+    api_key=os.getenv("AZURE_API"),
+    api_version=os.getenv("AZURE_API_VERSION"),
+    azure_endpoint=os.getenv("AZURE_BASE_URL")
+)
 
-# Initialize OpenAI client (add after your existing configurations)
-openai.api_key = OPENAI_API_KEY
 
 # Cache for biomarkers and conditions to avoid repeated ES calls
 _biomarkers_cache = None
@@ -1057,7 +298,6 @@ class BiomarkerService:
                 "query": {
                     "bool": {
                         "must": [
-                            {"term": {"Condition.keyword": condition}},
                             {"term": {"Biomarker Name.keyword": biomarker_name}}
                         ]
                     }
@@ -1075,7 +315,6 @@ class BiomarkerService:
                 "query": {
                     "bool": {
                         "must": [
-                            {"term": {"Condition.keyword": condition}},
                             {"term": {"Biomarker Name.keyword": biomarker_name}}
                         ]
                     }
@@ -1481,18 +720,31 @@ def match_disease_and_biomarker():
 # ─────── Biomarker Comparison API Routes ────────
 @app.route('/api/health', methods=['GET'])
 def health_check():
-    """Health check endpoint"""
+    """Enhanced health check endpoint"""
+    es_connected = False
+    es_error = None
+    
+    try:
+        if es and es.ping():
+            es_connected = True
+    except Exception as e:
+        es_error = str(e)
+    
     return jsonify({
         'status': 'healthy',
-        'elasticsearch_connected': es is not None and es.ping() if es else False,
+        'elasticsearch_connected': es_connected,
+        'elasticsearch_error': es_error,
+        'level_change_scoring': 'available',
         'cache_status': {
             'biomarkers_cached': _biomarkers_cache is not None,
             'conditions_cached': _conditions_cache is not None,
             'cache_age': time.time() - _cache_timestamp if _cache_timestamp else None
         },
-        'timestamp': datetime.now().isoformat()
+        'timestamp': datetime.now().isoformat(),
+        'fallback_mode': not es_connected
     })
-
+    
+    
 @app.route('/api/biomarkers', methods=['GET'])
 def get_biomarkers():
     """Get all available biomarkers"""
@@ -1527,24 +779,377 @@ def calculate_score():
     result = biomarker_service.calculate_biomarker_score(biomarker_name, condition)
     return jsonify(result)
 
+# @app.route('/api/biomarker/data', methods=['POST'])
+# def get_biomarker_data():
+#     """
+#     POST body: { biomarker_name, condition?, page?, size? }
+#     If `condition` provided -> return single-condition results with all_conditions: False.
+#     If missing/empty -> fetch ALL conditions (via terms agg) and return aggregated results with all_conditions: True.
+#     Uses keyword fields ("Biomarker Name.keyword", "Condition.keyword") and ES index ES_INDEX.
+#     Robust fallback when ES is unavailable.
+#     """
+#     try:
+#         data = request.get_json(force=True) or {}
+#         biomarker_name = (data.get('biomarker_name') or '').strip()
+#         condition = (data.get('condition') or '').strip()
+#         page = int(data.get('page', 1) or 1)
+#         size = int(data.get('size', 20) or 20)
+
+#         if not biomarker_name:
+#             return jsonify({'success': False, 'error': 'biomarker_name is required'}), 400
+
+#         # Helper to run a search safely
+#         def _safe_search(body):
+#             try:
+#                 return biomarker_service.es.search(index=biomarker_service.index, body=body)
+#             except Exception as e:
+#                 app.logger.error(f"Elasticsearch search error: {e}")
+#                 return None
+
+#         def _safe_count(body):
+#             try:
+#                 return biomarker_service.es.count(index=biomarker_service.index, body=body)
+#             except Exception as e:
+#                 app.logger.error(f"Elasticsearch count error: {e}")
+#                 return None
+
+#         # If ES client unavailable, return structured fallback
+#         if not biomarker_service or not biomarker_service.es:
+#             return jsonify({
+#                 'success': True,
+#                 'biomarker': biomarker_name,
+#                 'data': [],
+#                 'by_condition': {} if condition else {'Aging': {'data': [], 'count': 0}, 'Pigmentation': {'data': [], 'count': 0}, 'Wrinkles': {'data': [], 'count': 0}},
+#                 'total_count': 0,
+#                 'page': page if condition else 1,
+#                 'size': size,
+#                 'total_pages': 1,
+#                 'all_conditions': not bool(condition),
+#                 'fallback': True,
+#                 'error': 'Elasticsearch not available'
+#             })
+
+#         # Single-condition flow
+#         if condition:
+#             from_offset = (page - 1) * size
+#             query = {
+#                 "from": from_offset,
+#                 "size": size,
+#                 "query": {
+#                     "bool": {
+#                         "must": [
+#                             {"term": {"Biomarker Name.keyword": biomarker_name}},
+#                             {"term": {"Condition.keyword": condition}}
+#                         ]
+#                     }
+#                 },
+#                 "sort": [
+#                     {"_score": {"order": "desc"}},
+#                     {"PDF_name.keyword": {"order": "asc"}}
+#                 ]
+#             }
+#             count_q = {
+#                 "query": {
+#                     "bool": {
+#                         "must": [
+#                             {"term": {"Biomarker Name.keyword": biomarker_name}},
+#                             {"term": {"Condition.keyword": condition}}
+#                         ]
+#                     }
+#                 }
+#             }
+
+#             res = _safe_search(query)
+#             cnt = _safe_count(count_q)
+#             docs = [hit['_source'] for hit in (res or {}).get('hits', {}).get('hits', [])] if res else []
+#             total_count = (cnt or {}).get('count', 0)
+#             total_pages = max(1, (total_count + size - 1) // size)  # Calculate total pages
+
+#             return jsonify({
+#                 'success': True,
+#                 'biomarker': biomarker_name,
+#                 'condition': condition,
+#                 'data': docs,
+#                 'by_condition': {condition: {'data': docs, 'count': total_count}},
+#                 'total_count': total_count,
+#                 'page': page,
+#                 'size': size,
+#                 'total_pages': total_pages,
+#                 'all_conditions': False
+#             })
+
+#         # All-conditions flow
+#         # 1) fetch all conditions via terms agg on Condition.keyword
+#         agg_query = {
+#             "size": 0,
+#             "query": {
+#                 "term": {"Biomarker Name.keyword": biomarker_name}
+#             },
+#             "aggs": {
+#                 "conditions": {
+#                     "terms": {"field": "Condition.keyword", "size": 1000}
+#                 }
+#             }
+#         }
+#         agg_res = _safe_search(agg_query)
+#         agg_buckets = (((agg_res or {}).get('aggregations') or {}).get('conditions') or {}).get('buckets', [])
+#         all_conditions = [b['key'] for b in agg_buckets if b.get('doc_count', 0) > 0]
+
+#         # Fallback to service cache helper if agg failed
+#         if not all_conditions:
+#             conds = biomarker_service.get_conditions()
+#             if conds.get('success'):
+#                 all_conditions = conds.get('conditions', [])
+#             else:
+#                 # Hard fallback
+#                 all_conditions = ['Aging', 'Pigmentation', 'Wrinkles', 'Acne', 'Dryness', 'Sensitivity']
+
+#         by_condition = {}
+#         all_docs = []
+#         total_count = 0
+
+#         for cond in all_conditions:
+#             # For ALL-conditions flow we always return page=1 by spec; we still cap size per condition
+#             from_offset = 0
+#             search_q = {
+#                 "from": from_offset,
+#                 "size": size,
+#                 "query": {
+#                     "bool": {
+#                         "must": [
+#                             {"term": {"Biomarker Name.keyword": biomarker_name}},
+#                             {"term": {"Condition.keyword": cond}}
+#                         ]
+#                     }
+#                 },
+#                 "sort": [
+#                     {"_score": {"order": "desc"}},
+#                     {"PDF_name.keyword": {"order": "asc"}}
+#                 ]
+#             }
+#             count_q = {
+#                 "query": {
+#                     "bool": {
+#                         "must": [
+#                             {"term": {"Biomarker Name.keyword": biomarker_name}},
+#                             {"term": {"Condition.keyword": cond}}
+#                         ]
+#                     }
+#                 }
+#             }
+#             res = _safe_search(search_q)
+#             cnt = _safe_count(count_q)
+#             docs = [hit['_source'] for hit in (res or {}).get('hits', {}).get('hits', [])] if res else []
+#             ccount = (cnt or {}).get('count', 0)
+
+#             # Only include conditions that have data
+#             if ccount > 0 or docs:
+#                 by_condition[cond] = {'data': docs, 'count': ccount}
+#                 all_docs.extend(docs)
+#                 total_count += ccount
+
+#         return jsonify({
+#             'success': True,
+#             'biomarker': biomarker_name,
+#             'data': all_docs,
+#             'by_condition': by_condition,
+#             'total_count': total_count,
+#             'page': 1,
+#             'size': size,
+#             'total_pages': 1,
+#             'all_conditions': True
+#         })
+#     except Exception as e:
+#         app.logger.exception("Unhandled error in /api/biomarker/data")
+#         return jsonify({
+#             'success': False,
+#             'error': str(e),
+#             'all_conditions': False,
+#             'total_pages': 1
+#         }), 500
+
+
+
+
+def _get_es_and_index():
+    # Prefer biomarker_service.es / biomarker_service.index, else fall back
+    es_client = getattr(globals().get('biomarker_service', None), 'es', None) or globals().get('es', None)
+    index = getattr(globals().get('biomarker_service', None), 'index', None) \
+            or os.getenv('ES_INDEX', ES_INDEX)
+    return es_client, index
+
+def _bm_clause(name: str):
+    # Support underscore and space versions; keyword and analyzed
+    return {
+        "bool": {
+            "should": [
+                {"term": {"Biomarker_Name.keyword": name}},
+                {"term": {"Biomarker Name.keyword": name}},
+                {"match_phrase": {"Biomarker_Name": name}},
+                {"match_phrase": {"Biomarker Name": name}},
+            ],
+            "minimum_should_match": 1
+        }
+    }
+
+def _cond_clause(cond: str):
+    # Condition may or may not have a .keyword subfield
+    return {
+        "bool": {
+            "should": [
+                {"term": {"Condition.keyword": cond}},
+                {"match_phrase": {"Condition": cond}},
+            ],
+            "minimum_should_match": 1
+        }
+    }
+
+def _safe_sort():
+    # Avoid brittle .keyword sorts that explode if field is unmapped
+    # If you really want a secondary sort, keep the line with unmapped_type.
+    return [{"_score": {"order": "desc"}}]
+    # or: return [{"_score": {"order": "desc"}}, {"PDF_name.keyword": {"order": "asc", "unmapped_type": "keyword"}}]
+
 @app.route('/api/biomarker/data', methods=['POST'])
 def get_biomarker_data():
-    """Get all data for a biomarker in a condition"""
-    if not biomarker_service:
-        return jsonify({'success': False, 'error': 'Elasticsearch not available'}), 500
-    
-    data = request.get_json()
-    biomarker_name = data.get('biomarker_name')
-    condition = data.get('condition')
-    page = data.get('page', 1)
-    size = data.get('size', 20)
-    
-    if not biomarker_name or not condition:
-        return jsonify({'success': False, 'error': 'biomarker_name and condition are required'}), 400
-    
-    result = biomarker_service.get_biomarker_data(biomarker_name, condition, page, size)
-    return jsonify(result)
+    """
+    POST body: { biomarker_name, condition?, page?, size? }
+    - If `condition` is provided -> single-condition results (paginated) with all_conditions:false
+    - If not provided -> fetch all conditions via terms agg (best effort) with all_conditions:true
+    Returns real ES data only. No mock rows are generated when ES is available.
+    """
+    try:
+        data = request.get_json(force=True) or {}
+        biomarker_name = (data.get('biomarker_name') or '').strip()
+        condition = (data.get('condition') or '').strip()
+        page = int(data.get('page') or 1)
+        size = int(data.get('size') or 20)
 
+        if not biomarker_name:
+            return jsonify({'success': False, 'error': 'biomarker_name is required'}), 400
+
+        es_client, index = _get_es_and_index()
+        if not es_client:
+            # ES unavailable -> minimal fallback (no fabricated docs)
+            return jsonify({
+                'success': True, 'biomarker': biomarker_name, 'data': [],
+                'by_condition': {} if not condition else {condition: {'data': [], 'count': 0}},
+                'total_count': 0, 'page': 1 if not condition else page, 'size': size,
+                'total_pages': 1, 'all_conditions': not bool(condition),
+                'fallback': True, 'error': 'Elasticsearch client not available'
+            })
+
+        try:
+            if not es_client.ping():
+                return jsonify({
+                    'success': True, 'biomarker': biomarker_name, 'data': [],
+                    'by_condition': {} if not condition else {condition: {'data': [], 'count': 0}},
+                    'total_count': 0, 'page': 1 if not condition else page, 'size': size,
+                    'total_pages': 1, 'all_conditions': not bool(condition),
+                    'fallback': True, 'error': 'Elasticsearch ping failed'
+                })
+        except Exception as e:
+            app.logger.error(f"ES ping error: {e}")
+            return jsonify({
+                'success': True, 'biomarker': biomarker_name, 'data': [],
+                'by_condition': {} if not condition else {condition: {'data': [], 'count': 0}},
+                'total_count': 0, 'page': 1 if not condition else page, 'size': size,
+                'total_pages': 1, 'all_conditions': not bool(condition),
+                'fallback': True, 'error': 'Elasticsearch ping error'
+            })
+
+        # ----------------- SINGLE CONDITION -----------------
+        if condition:
+            from_offset = max(0, (page - 1) * size)
+            must_clauses = [_bm_clause(biomarker_name), _cond_clause(condition)]
+            q = {
+                "from": from_offset, "size": size,
+                "query": {"bool": {"must": must_clauses}},
+                "sort": _safe_sort()
+            }
+            cq = {"query": {"bool": {"must": must_clauses}}}
+
+            try:
+                res = es_client.search(index=index, body=q)
+                cnt = es_client.count(index=index, body=cq)
+            except Exception as e:
+                app.logger.error(f"ES search error (single-condition): {e}")
+                return jsonify({
+                    'success': True, 'biomarker': biomarker_name, 'condition': condition,
+                    'data': [], 'by_condition': {condition: {'data': [], 'count': 0}},
+                    'total_count': 0, 'page': page, 'size': size, 'total_pages': 1,
+                    'all_conditions': False, 'fallback': True, 'error': 'Elasticsearch search error'
+                })
+
+            hits = (res or {}).get('hits', {}).get('hits', []) or []
+            docs = [h.get('_source', {}) for h in hits]
+            total_count = int((cnt or {}).get('count', 0))
+            total_pages = max(1, (total_count + size - 1) // size)
+
+            # NOTE: 0 hits is valid (fallback=False). UI will no longer show “mock”.
+            return jsonify({
+                'success': True, 'biomarker': biomarker_name, 'condition': condition,
+                'data': docs, 'by_condition': {condition: {'data': docs, 'count': total_count}},
+                'total_count': total_count, 'page': page, 'size': size, 'total_pages': total_pages,
+                'all_conditions': False, 'fallback': False
+            })
+
+        # ----------------- ALL CONDITIONS -----------------
+        # Best-effort terms aggregation for conditions
+        agg = {
+            "size": 0,
+            "query": _bm_clause(biomarker_name),
+            "aggs": {"conditions": {"terms": {"field": "Condition.keyword", "size": 1000}}}
+        }
+        all_conditions = []
+        try:
+            agg_res = es_client.search(index=index, body=agg)
+            buckets = (agg_res.get('aggregations', {})
+                                 .get('conditions', {})
+                                 .get('buckets', []))
+            all_conditions = [b['key'] for b in buckets if b.get('doc_count', 0) > 0]
+        except Exception as e:
+            app.logger.warning(f"Condition agg failed (will return empty): {e}")
+
+        by_condition = {}
+        all_docs = []
+        total_count = 0
+
+        # Fetch up to `size` docs per condition (page=1 by spec)
+        for cond in all_conditions:
+            must_clauses = [_bm_clause(biomarker_name), _cond_clause(cond)]
+            q = {
+                "from": 0, "size": size,
+                "query": {"bool": {"must": must_clauses}},
+                "sort": _safe_sort()
+            }
+            cq = {"query": {"bool": {"must": must_clauses}}}
+
+            try:
+                res = es_client.search(index=index, body=q)
+                cnt = es_client.count(index=index, body=cq)
+            except Exception as e:
+                app.logger.error(f"ES search error for condition '{cond}': {e}")
+                continue  # skip this condition on error
+
+            hits = (res or {}).get('hits', {}).get('hits', []) or []
+            docs = [h.get('_source', {}) for h in hits]
+            ccount = int((cnt or {}).get('count', 0))
+
+            if ccount > 0:
+                by_condition[cond] = {'data': docs, 'count': ccount}
+                all_docs.extend(docs)
+                total_count += ccount
+
+        return jsonify({
+            'success': True, 'biomarker': biomarker_name,
+            'data': all_docs, 'by_condition': by_condition, 'total_count': total_count,
+            'page': 1, 'size': size, 'total_pages': 1, 'all_conditions': True, 'fallback': False
+        })
+
+    except Exception as e:
+        app.logger.exception("Unhandled error in /api/biomarker/data")
+        return jsonify({'success': False, 'error': str(e), 'all_conditions': False, 'total_pages': 1}), 500
 @app.route('/api/treatments/compare', methods=['POST'])
 def compare_treatments():
     """Compare two treatments"""
@@ -1729,7 +1334,7 @@ def handle_api_error(error, context="Unknown"):
 @rate_limit(max_requests=5, window_seconds=300)
 def generate_treatment_insights():
     """Generate AI insights for treatment comparison (synchronous version)"""
-    if not OPENAI_API_KEY:
+    if not openai_client:
         return jsonify(handle_api_error(
             "OpenAI API key not configured", 
             "insights_generation"
@@ -1948,20 +1553,20 @@ def generate_openai_insights_sync(user_query, insights_data, options={}):
         analysis_type = determine_analysis_type(user_query)
         
         # Custom system prompt
-        system_prompt = get_custom_system_prompt(analysis_type, options)
+        system_prompt = get_custom_system_prompt(analysis_type, options, insights_data, user_query)
         
         # Enhanced user prompt
         user_prompt = build_enhanced_user_prompt(user_query, context, insights_data, analysis_type)
         
         # Make OpenAI API call
-        response = openai.ChatCompletion.create(
-            model=options.get('model', 'gpt-3.5-turbo'),  # Changed to more stable model
+        response = openai_client.chat.completions.create(
+            model='gpt-4o-mini',  # Changed to more stable model
             messages=[
                 {"role": "system", "content": system_prompt},
                 {"role": "user", "content": user_prompt}
             ],
-            max_tokens=options.get('max_tokens', 1500),
-            temperature=options.get('temperature', 0.7)
+            max_tokens= 1500,
+            temperature=0.7
         )
         
         insights_text = response.choices[0].message.content.strip()
@@ -1970,7 +1575,7 @@ def generate_openai_insights_sync(user_query, insights_data, options={}):
             'success': True,
             'insights': insights_text,
             'tokens_used': response.usage.total_tokens if hasattr(response, 'usage') else 0,
-            'model_used': options.get('model', 'gpt-3.5-turbo'),
+            'model_used': options.get('model', 'gpt-4o-mini'),
             'analysis_type': analysis_type
         }
         
@@ -2044,31 +1649,162 @@ def determine_analysis_type(query):
     else:
         return 'general'
 
-def get_custom_system_prompt(analysis_type, options):
-    """Get customized system prompt based on analysis type"""
-    base_prompt = """You are a senior biomarker research analyst with expertise in dermatology, cosmetics, and clinical research. 
-    You help researchers and clinicians understand complex biomarker data and treatment comparisons."""
+def get_custom_system_prompt(analysis_type, options, insights, user_query):
     
-    type_specific = {
-        'comparison': "Focus on detailed comparative analysis, highlighting key differences, similarities, and relative advantages.",
-        'recommendation': "Provide clear, actionable recommendations based on the data, with rationale and confidence levels.",
-        'mechanistic': "Explain the biological mechanisms and pathways involved, connecting biomarkers to physiological processes.",
-        'safety': "Emphasize safety considerations, potential risks, and contraindications based on biomarker profiles.",
-        'efficacy': "Focus on treatment effectiveness, clinical outcomes, and biomarker performance metrics.",
-        'general': "Provide a comprehensive overview addressing multiple aspects of the biomarker data."
+    analysis_type = (analysis_type or "general").lower().strip()
+    allowed = {"comparison","recommendation","mechanistic","safety","efficacy","general"}
+    if analysis_type not in allowed:
+        analysis_type = "general"
+    
+    # f"""Get customized system prompt based on analysis type"""
+    # base_prompt = """You are a senior biomarker research analyst with expertise in dermatology, cosmetics, and clinical research. 
+    # You help researchers and clinicians understand complex biomarker data and treatment comparisons."""
+    
+    
+    # type_specific = {
+    #     'comparison': "Focus on detailed comparative analysis, highlighting key differences, similarities, and relative advantages.",
+    #     'recommendation': "Provide clear, actionable recommendations based on the data, with rationale and confidence levels.",
+    #     'mechanistic': "Explain the biological mechanisms and pathways involved, connecting biomarkers to physiological processes.",
+    #     'safety': "Emphasize safety considerations, potential risks, and contraindications based on biomarker profiles.",
+    #     'efficacy': "Focus on treatment effectiveness, clinical outcomes, and biomarker performance metrics.",
+    #     'general': "Provide a comprehensive overview addressing multiple aspects of the biomarker data."
+    # }
+    
+    # Task = f"""
+    # You task are Identify the Options from {options} and Data for the comparisons {insights} and provide the key inputs for the option/{type_specific}    
+    # """
+    
+    # formatting_instructions = """
+    # Structure your response with:
+    # - **Executive Summary** (2-3 key points)
+    # - **Detailed Analysis** (evidence-based insights)
+    # - **Clinical Implications** (practical applications)
+    # - **Recommendations** (actionable next steps)
+    
+    # Use markdown formatting, include specific data points, and maintain scientific rigor while being accessible.
+    # """
+    
+    # return f"{base_prompt}\n\n{type_specific.get(analysis_type, type_specific['general'])}\n\n\n\n {Task} and {formatting_instructions}"
+    
+    base_prompt = (
+        "You are a senior biomarker research analyst specializing in dermatology, "
+        "cosmeceuticals, and clinical research. You help researchers and clinicians "
+        "interpret biomarker data and treatment evidence with scientific rigor and clarity."
+    )
+
+    type_rules = {
+        "comparison": {
+            "focus": "Perform a **head-to-head comparison** of the specified options using the provided insights.",
+            "must_do": [
+                "Start with a 2–3 bullet **Executive Summary** of the key differences.",
+                "Provide a **Comparison Table** with rows for endpoints/biomarkers, effect sizes, p-values/CIs (if available), study design/size, population, and limitations.",
+                "Discuss **trade-offs**, **strengths/weaknesses**, and **tie-breaker criteria** for selection.",
+            ],
+        },
+        "recommendation": {
+            "focus": "Produce **clear, actionable recommendations** grounded in the evidence.",
+            "must_do": [
+                "Start with a 2–3 bullet **Executive Summary** stating the top recommendation.",
+                "Provide a **Ranked List** of options with justification and an explicit **confidence (0–100)** for each.",
+                "List **assumptions**, **applicability conditions**, and **monitoring/next steps**.",
+            ],
+        },
+        "mechanistic": {
+            "focus": "Explain **biological mechanisms** linking treatments/biomarkers to skin outcomes.",
+            "must_do": [
+                "Start with a 2–3 bullet **Executive Summary** of the main pathways.",
+                "Outline a **Mechanism Map (text)**: upstream trigger → pathway nodes → downstream biomarkers → clinical effects.",
+                "Note **causal strength** (direct vs inferred), and key **uncertainties/gaps**.",
+            ],
+        },
+        "safety": {
+            "focus": "Evaluate **safety signals, risks, contraindications**, and **risk mitigation**.",
+            "must_do": [
+                "Start with a 2–3 bullet **Executive Summary** of safety posture.",
+                "Provide a **Safety Table**: adverse event, severity, incidence (if known), population, source/study design.",
+                "List **contraindications**, **DDIs**, **monitoring plans**, and **risk–benefit** notes.",
+            ],
+        },
+        "efficacy": {
+            "focus": "Assess **treatment effectiveness** and **biomarker performance**.",
+            "must_do": [
+                "Start with a 2–3 bullet **Executive Summary** of efficacy signals.",
+                "Report **primary/secondary endpoints**, effect sizes, precision (CI), and **clinical relevance thresholds**.",
+                "Discuss **generalizability** (population, setting), and **consistency** across studies.",
+            ],
+        },
+        "general": {
+            "focus": "Provide a balanced **overview** covering comparative points, efficacy, safety, and mechanisms as relevant.",
+            "must_do": [
+                "Start with a 2–3 bullet **Executive Summary**.",
+                "Summarize **evidence base**, then **efficacy**, **safety**, and **mechanistic rationale**.",
+                "Close with **practical recommendations** and key uncertainties.",
+            ],
+        },
     }
     
-    formatting_instructions = """
-    Structure your response with:
-    - **Executive Summary** (2-3 key points)
-    - **Detailed Analysis** (evidence-based insights)
-    - **Clinical Implications** (practical applications)
-    - **Recommendations** (actionable next steps)
+    rules = type_rules[analysis_type]
+
+    formatting_instructions = (
+        "### Output Format (Markdown)\n"
+        "- **Executive Summary** (2–3 bullets, crisp, decision-oriented)\n"
+        "- **Detailed Analysis** (evidence-based; cite concrete numbers if present)\n"
+        "- **Clinical Implications** (who benefits, how to use, monitoring)\n"
+        "- **Recommendations** (actionable next steps)\n"
+        "\n"
+        "If any requested field is missing in the insights, write **Not reported** rather than inventing values."
+    )
+
+    guardrails = (
+        "### Grounding & Guardrails\n"
+        "- Use only the **provided options** and **insights** for claims. Do **not** fabricate data.\n"
+        "- Prefer concrete numbers (effect sizes, p-values, CIs, N) when present; otherwise state **Not reported**.\n"
+        "- Be concise and clinically useful. Avoid unfalsifiable claims.\n"
+        "- If the user’s query asks for a specific thing, **answer that first** before extra detail.\n"
+        "- Keep Executive Summary to **max 3 bullets**."
+    )
+
+    # Inject user context last so the model prioritizes it
+    user_block = (
+        f"### User Query\n{user_query.strip()}\n" if user_query else
+        "### User Query\nNot provided.\n"
+    )
     
-    Use markdown formatting, include specific data points, and maintain scientific rigor while being accessible.
-    """
-    
-    return f"{base_prompt}\n\n{type_specific.get(analysis_type, type_specific['general'])}\n\n{formatting_instructions}"
+    # Echo options/insights verbatim (stringify safely)
+    import json
+    try:
+        options_str = json.dumps(options, ensure_ascii=False, indent=2)
+    except Exception:
+        options_str = str(options)
+    try:
+        insights_str = json.dumps(insights, ensure_ascii=False, indent=2)
+    except Exception:
+        insights_str = str(insights)
+
+    context_block = (
+        "### Options (use only these)\n"
+        f"{options_str}\n\n"
+        "### Provided Insights / Evidence\n"
+        f"{insights_str}\n"
+    )
+
+    must_do_block = "\n".join(f"- {item}" for item in rules["must_do"])
+
+    task_block = (
+        "### Task\n"
+        f"{rules['focus']}\n"
+        "**Must include:**\n"
+        f"{must_do_block}\n"
+    )
+
+    return (
+        f"{base_prompt}\n\n"
+        f"{task_block}\n"
+        f"{formatting_instructions}\n\n"
+        f"{guardrails}\n\n"
+        f"{context_block}\n"
+        f"{user_block}"
+    )
 
 def build_enhanced_user_prompt(user_query, context, insights_data, analysis_type):
     """Build enhanced user prompt"""
@@ -2674,6 +2410,320 @@ def validate_biomarker():
             'success': False,
             'error': str(e)
         }), 500
+
+
+# Add these routes to your app.py file
+
+@app.route('/api/biomarker/level-change-data', methods=['POST'])
+def get_biomarker_level_change_data():
+    """Get level change data for a biomarker in a condition"""
+    try:
+        data = request.get_json()
+        biomarker_name = data.get('biomarker_name')
+        condition = data.get('condition')
+        
+        if not biomarker_name or not condition:
+            return jsonify({'success': False, 'error': 'biomarker_name and condition are required'}), 400
+        
+        # Generate mock level change data since ES might not be available
+        mock_data = generate_mock_level_change_data(biomarker_name, condition)
+        stats = calculate_level_change_stats(mock_data)
+        score = calculate_level_change_score(stats)
+        
+        return jsonify({
+            'success': True,
+            'biomarker': biomarker_name,
+            'condition': condition,
+            'data': mock_data,
+            'stats': stats,
+            'score': score,
+            'fallback': True
+        })
+        
+    except Exception as e:
+        app.logger.error(f"Error getting level change data: {e}")
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+@app.route('/api/biomarker/level-change-score', methods=['POST'])
+def get_biomarker_level_change_score():
+    """Get level change score for a biomarker in a condition"""
+    try:
+        data = request.get_json()
+        biomarker_name = data.get('biomarker_name')
+        condition = data.get('condition')
+        
+        if not biomarker_name or not condition:
+            return jsonify({'success': False, 'error': 'biomarker_name and condition are required'}), 400
+        
+        # Generate mock data and calculate score
+        mock_data = generate_mock_level_change_data(biomarker_name, condition)
+        stats = calculate_level_change_stats(mock_data)
+        score = calculate_level_change_score(stats)
+        
+        return jsonify({
+            'success': True,
+            'biomarker': biomarker_name,
+            'condition': condition,
+            'statistics': stats,
+            'score': score,
+            'scoring_method': 'level_change_v3',
+            'fallback': True
+        })
+        
+    except Exception as e:
+        app.logger.error(f"Error calculating level change score: {e}")
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+@app.route('/api/treatments/compare-level-change', methods=['POST'])
+def compare_treatments_level_change():
+    """Compare treatments using level change analysis"""
+    try:
+        data = request.get_json()
+        treatments = data.get('treatments', [])
+        
+        if not treatments:
+            return jsonify({'success': False, 'error': 'treatments array is required'}), 400
+        
+        comparison_results = []
+        
+        for treatment in treatments:
+            treatment_analysis = {
+                'name': treatment.get('name'),
+                'condition': treatment.get('condition'),
+                'biomarkers': [],
+                'overallScore': 0,
+                'levelChangeDistribution': {'increase': 0, 'decrease': 0, 'unchanged': 0}
+            }
+            
+            biomarker_scores = []
+            distribution_totals = {'increase': 0, 'decrease': 0, 'unchanged': 0}
+            
+            for biomarker in treatment.get('biomarkers', []):
+                if biomarker.get('name', '').strip():
+                    mock_data = generate_mock_level_change_data(biomarker['name'], treatment.get('condition'))
+                    stats = calculate_level_change_stats(mock_data)
+                    score = calculate_level_change_score(stats)
+                    
+                    biomarker_analysis = {
+                        'name': biomarker['name'],
+                        'stats': stats,
+                        'score': score,
+                        'reliability': stats.get('reliability', 'low')
+                    }
+                    
+                    treatment_analysis['biomarkers'].append(biomarker_analysis)
+                    biomarker_scores.append(score)
+                    
+                    # Accumulate distribution
+                    for key in distribution_totals:
+                        distribution_totals[key] += stats.get('percentages', {}).get(key, 0)
+            
+            # Calculate overall metrics
+            if biomarker_scores:
+                treatment_analysis['overallScore'] = sum(biomarker_scores) / len(biomarker_scores)
+                treatment_analysis['levelChangeDistribution'] = {
+                    key: value / len(biomarker_scores) for key, value in distribution_totals.items()
+                }
+            
+            comparison_results.append(treatment_analysis)
+        
+        return jsonify({
+            'success': True,
+            'comparison': {
+                'treatments': comparison_results,
+                'summary': {
+                    'totalBiomarkers': sum(len(t['biomarkers']) for t in comparison_results),
+                    'avgLevelChangeScore': sum(t['overallScore'] for t in comparison_results) / len(comparison_results) if comparison_results else 0,
+                    'bestPerformingTreatment': max(comparison_results, key=lambda x: x['overallScore']) if comparison_results else None
+                }
+            },
+            'timestamp': datetime.now().isoformat(),
+            'scoring_method': 'level_change_v3',
+            'fallback': True
+        })
+        
+    except Exception as e:
+        app.logger.error(f"Error comparing treatments: {e}")
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+@app.route('/api/dashboard/level-change-summary', methods=['GET'])
+def get_dashboard_summary():
+    """Get dashboard summary for level change analysis"""
+    try:
+        # Return mock dashboard data
+        dashboard_data = {
+            'success': True,
+            'dashboard': {
+                'total_conditions': 9,
+                'total_biomarkers': 30,
+                'level_change_distribution': {
+                    'increase': 1250,
+                    'decrease': 890,
+                    'unchanged': 560,
+                    'unknown': 300
+                },
+                'study_types': {
+                    'Clinical trial': 1200,
+                    'In vitro study': 800,
+                    'Animal study': 600,
+                    'Observational study': 400
+                },
+                'conditions': ['Aging', 'Pigmentation', 'Wrinkles', 'Acne', 'Dryness', 'Sensitivity', 'Inflammation', 'Photo-aging', 'Elasticity Loss'],
+                'data_quality': 'medium',
+                'scoring_version': '3.0'
+            },
+            'timestamp': datetime.now().isoformat(),
+            'scoring_method': 'level_change_v3',
+            'fallback': True
+        }
+        
+        return jsonify(dashboard_data)
+        
+    except Exception as e:
+        app.logger.error(f"Error getting dashboard summary: {e}")
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+# Add these helper functions to your app.py
+
+def generate_mock_level_change_data(biomarker_name, condition):
+    """Generate mock level change data for development"""
+    import random
+    
+    data_points = random.randint(15, 60)
+    data = []
+    
+    # Define realistic probabilities based on biomarker and condition
+    probabilities = {
+        'IL-6_Aging': {'increase': 0.65, 'decrease': 0.20, 'unchanged': 0.15},
+        'TNF-α_Aging': {'increase': 0.60, 'decrease': 0.25, 'unchanged': 0.15},
+        'MCP-1_Aging': {'increase': 0.55, 'decrease': 0.25, 'unchanged': 0.20},
+        'Collagen I_Aging': {'increase': 0.35, 'decrease': 0.45, 'unchanged': 0.20},
+        'Elastin_Aging': {'increase': 0.30, 'decrease': 0.50, 'unchanged': 0.20},
+        'Melanin_Pigmentation': {'increase': 0.70, 'decrease': 0.15, 'unchanged': 0.15},
+        'Tyrosinase_Pigmentation': {'increase': 0.65, 'decrease': 0.20, 'unchanged': 0.15},
+    }
+    
+    key = f"{biomarker_name}_{condition}"
+    probs = probabilities.get(key, {'increase': 0.45, 'decrease': 0.35, 'unchanged': 0.20})
+    
+    for i in range(data_points):
+        rand = random.random()
+        level_change = 'unknown'
+        
+        if rand < probs['increase']:
+            level_change = 'increase'
+        elif rand < probs['increase'] + probs['decrease']:
+            level_change = 'decrease'
+        elif rand < probs['increase'] + probs['decrease'] + probs['unchanged']:
+            level_change = 'unchanged'
+        
+        data.append({
+            'Subject_ID': f"S{str(i + 1).zfill(3)}",
+            'Biomarker_Level_Change': level_change,
+            'Treatment_Name': f"Treatment {chr(65 + (i % 6))}",
+            'Type_of_Study': random.choice(['Clinical trial', 'In vitro study', 'Animal study', 'Observational study']),
+            'Age': random.randint(20, 80),
+            'Sex': random.choice(['Female', 'Male']),
+            'Ethnicity': random.choice(['Caucasian', 'Asian', 'African American', 'Hispanic', 'Mixed']),
+            'Key_Outcome': f"Study showed {level_change} in {biomarker_name} levels after treatment."
+        })
+    
+    return data
+
+def calculate_level_change_stats(data):
+    """Calculate level change statistics"""
+    if not data or len(data) == 0:
+        return {
+            'total': 0,
+            'increase': 0,
+            'decrease': 0,
+            'unchanged': 0,
+            'unknown': 0,
+            'percentages': {'increase': 0, 'decrease': 0, 'unchanged': 0},
+            'reliability': 'low',
+            'dominantTrend': 'unknown',
+            'dataQuality': 0
+        }
+
+    level_changes = []
+    for item in data:
+        change = item.get('Biomarker_Level_Change', '').lower().strip()
+        if change == 'increase':
+            level_changes.append('increase')
+        elif change == 'decrease':
+            level_changes.append('decrease')
+        elif change in ['unchanged', 'no change', 'stable']:
+            level_changes.append('unchanged')
+        else:
+            level_changes.append('unknown')
+
+    total = len(level_changes)
+    increase = level_changes.count('increase')
+    decrease = level_changes.count('decrease')
+    unchanged = level_changes.count('unchanged')
+    unknown = level_changes.count('unknown')
+
+    valid_data = total - unknown
+    increase_percent = (increase / valid_data) * 100 if valid_data > 0 else 0
+    decrease_percent = (decrease / valid_data) * 100 if valid_data > 0 else 0
+    unchanged_percent = (unchanged / valid_data) * 100 if valid_data > 0 else 0
+
+    # Calculate reliability
+    reliability = 'low'
+    if valid_data >= 20 and (unknown / total) < 0.2:
+        reliability = 'high'
+    elif valid_data >= 10 and (unknown / total) < 0.3:
+        reliability = 'medium'
+
+    # Determine dominant trend
+    dominant_trend = 'stable'
+    if increase_percent > decrease_percent and increase_percent > unchanged_percent:
+        dominant_trend = 'increase'
+    elif decrease_percent > increase_percent and decrease_percent > unchanged_percent:
+        dominant_trend = 'decrease'
+
+    return {
+        'total': total,
+        'validData': valid_data,
+        'increase': increase,
+        'decrease': decrease,
+        'unchanged': unchanged,
+        'unknown': unknown,
+        'percentages': {
+            'increase': increase_percent,
+            'decrease': decrease_percent,
+            'unchanged': unchanged_percent
+        },
+        'reliability': reliability,
+        'dominantTrend': dominant_trend,
+        'dataQuality': valid_data / total if total > 0 else 0
+    }
+
+def calculate_level_change_score(stats):
+    """Calculate level change score"""
+    if not stats or stats.get('validData', 0) == 0:
+        return 0
+
+    percentages = stats.get('percentages', {})
+    reliability = stats.get('reliability', 'low')
+    data_quality = stats.get('dataQuality', 0)
+    
+    # Base score calculation (0-1 scale)
+    base_score = (
+        percentages.get('increase', 0) * 0.6 +        # Positive changes weighted highest
+        percentages.get('unchanged', 0) * 0.3 +       # Stable is good
+        (100 - percentages.get('decrease', 0)) * 0.1  # Penalize decreases
+    ) / 100
+
+    # Apply reliability multiplier
+    reliability_multiplier = {'high': 1.0, 'medium': 0.8, 'low': 0.6}.get(reliability, 0.6)
+
+    # Apply data quality multiplier
+    data_quality_multiplier = min(data_quality * 1.2, 1.0)
+
+    final_score = base_score * reliability_multiplier * data_quality_multiplier
+    return max(0, min(final_score, 1))  # Clamp between 0 and 1
+
 
 @app.errorhandler(404)
 def not_found(error):
