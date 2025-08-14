@@ -1,6 +1,6 @@
 class EnhancedApiService {
   constructor() {
-    this.baseURL = import.meta.env.REACT_APP_API_URL || 'http://localhost:5000';
+    this.baseURL = import.meta.env.VITE_API_URL || 'http://localhost:5000';
     this.cache = new Map();
     this.cacheTimeout = 5 * 60 * 1000; // 5 minutes
     this.requestQueue = new Map();
@@ -894,7 +894,7 @@ async searchBiomarkers(query, condition = null, limit = 50) {
     if (condition) params.set('condition', condition);
 
     // Try your backend search endpoint; adjust the path if yours differs
-    const result = await this.apiCall(`/api/biomarkers/search?${params.toString()}`);
+    const result = await this.apiCall(`/api/search?${params.toString()}`);
 
     // Normalize response shape
     const normalized = {

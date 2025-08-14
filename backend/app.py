@@ -1164,22 +1164,63 @@ def compare_treatments():
     result = biomarker_service.compare_treatments(treatment1, treatment2)
     return jsonify(result)
 
-@app.route('/api/search', methods=['POST'])
+# @app.route('/api/search', methods=['GET','POST'])
+# def search_biomarkers():
+#     """Search biomarkers with query"""
+#     if not biomarker_service:
+#         return jsonify({'success': False, 'error': 'Elasticsearch not available'}), 500
+    
+#     data = request.get_json()
+#     query = data.get('query')
+#     condition = data.get('condition')
+#     limit = data.get('limit', 50)
+    
+#     if not query:
+#         return jsonify({'success': False, 'error': 'query is required'}), 400
+    
+#     result = biomarker_service.search_biomarkers(query, condition, limit)
+#     return jsonify(result)
+
+@app.route('/api/search', methods=['GET', 'POST', 'OPTIONS'])
 def search_biomarkers():
-    """Search biomarkers with query"""
+    # --- CORS preflight: must return 2xx with allow headers ---
+    if request.method == 'OPTIONS':
+        return ('', 204)
+
+    # normal logic
     if not biomarker_service:
         return jsonify({'success': False, 'error': 'Elasticsearch not available'}), 500
-    
-    data = request.get_json()
-    query = data.get('query')
-    condition = data.get('condition')
-    limit = data.get('limit', 50)
-    
-    if not query:
+
+    query = None
+    condition = None
+    limit = 50
+
+    if request.method == 'GET':
+        query = request.args.get('q') or request.args.get('query')
+        condition = request.args.get('condition') or None
+        if request.args.get('limit'):
+            try:
+                limit = int(request.args.get('limit'))
+            except ValueError:
+                return jsonify({'success': False, 'error': 'limit must be an integer'}), 400
+    else:  # POST
+        data = request.get_json(silent=True) or {}
+        query = data.get('query') or data.get('q')
+        condition = data.get('condition') or None
+        if data.get('limit') is not None:
+            try:
+                limit = int(data.get('limit'))
+            except ValueError:
+                return jsonify({'success': False, 'error': 'limit must be an integer'}), 400
+
+    if not query or not str(query).strip():
         return jsonify({'success': False, 'error': 'query is required'}), 400
-    
-    result = biomarker_service.search_biomarkers(query, condition, limit)
-    return jsonify(result)
+
+    try:
+        result = biomarker_service.search_biomarkers(query.strip(), condition, limit)
+        return jsonify(result), 200
+    except Exception as e:
+        return jsonify({'success': False, 'error': f'Server error: {e}'}), 500
 
 @app.route('/api/biomarker/scores-all', methods=['POST'])
 def get_all_biomarker_scores():
