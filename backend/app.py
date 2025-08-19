@@ -50,7 +50,9 @@ ES_API_KEY = os.getenv('elasticapikey', '')
 ES_INDEX = os.getenv('ES_INDEX', 'trialpredict_ecs')
 
 
+from openai import AzureOpenAI
 openai_client = AzureOpenAI(
+   
     api_key=os.getenv("AZURE_API"),
     api_version=os.getenv("AZURE_API_VERSION"),
     azure_endpoint=os.getenv("AZURE_BASE_URL")
@@ -1588,104 +1590,47 @@ def process_single_treatment_sync(treatment_info, all_biomarkers):
     
     return treatment_analysis
 
-# def generate_openai_insights_sync(user_query, insights_data, options={}):
-#     """Synchronous OpenAI insights generation"""
-#     try:
-#         # Prepare context
-#         context = prepare_enhanced_openai_context(insights_data)
-        
-#         # Determine analysis type from query
-#         analysis_type = determine_analysis_type(user_query)
-        
-#         # Custom system prompt
-#         system_prompt = get_custom_system_prompt(analysis_type, options, insights_data, user_query)
-        
-#         # Enhanced user prompt
-#         user_prompt = build_enhanced_user_prompt(user_query, context, insights_data, analysis_type)
-        
-#         # Make OpenAI API call
-#         response = openai_client.chat.completions.create(
-#             model='gpt-4o-mini',  # Changed to more stable model
-#             messages=[
-#                 {"role": "system", "content": system_prompt},
-#                 {"role": "user", "content": user_prompt}
-#             ],
-#             max_tokens= 1500,
-#             temperature=0.7
-#         )
-        
-#         insights_text = response.choices[0].message.content.strip()
-        
-#         return {
-#             'success': True,
-#             'insights': insights_text,
-#             'tokens_used': response.usage.total_tokens if hasattr(response, 'usage') else 0,
-#             'model_used': options.get('model', 'gpt-4o-mini'),
-#             'analysis_type': analysis_type
-#         }
-        
-#     except Exception as e:
-#         app.logger.error(f"OpenAI API error: {e}")
-#         # Enhanced fallback
-#         return generate_enhanced_fallback_insights(user_query, insights_data)
-
 def generate_openai_insights_sync(user_query, insights_data, options={}):
     """Synchronous OpenAI insights generation"""
     try:
-        # Prepare context safely (ensure string)
+        # Prepare context
         context = prepare_enhanced_openai_context(insights_data)
-        if isinstance(context, (dict, list)):
-            context = json.dumps(context, indent=2)
-
+       
         # Determine analysis type from query
         analysis_type = determine_analysis_type(user_query)
-
-        # Custom system prompt (ensure string)
-        system_prompt = get_custom_system_prompt(
-            analysis_type, options, insights_data, user_query
-        )
-        if isinstance(system_prompt, (dict, list)):
-            system_prompt = json.dumps(system_prompt, indent=2)
-
-        # Enhanced user prompt (ensure string)
-        user_prompt = build_enhanced_user_prompt(
-            user_query, context, insights_data, analysis_type
-        )
-        if isinstance(user_prompt, (dict, list)):
-            user_prompt = json.dumps(user_prompt, indent=2)
-
-        # --- OpenAI API call ---
+       
+        # Custom system prompt
+        system_prompt = get_custom_system_prompt(analysis_type, options, insights_data, user_query)
+       
+        # Enhanced user prompt
+        user_prompt = build_enhanced_user_prompt(user_query, context, insights_data, analysis_type)
+       
+        # Make OpenAI API call
         response = openai_client.chat.completions.create(
-        model=options.get("model", "gpt-4o-mini"),
-        messages=[
-            {
-                "role": "system",
-                "content": json.dumps(system_prompt, indent=2) if isinstance(system_prompt, (dict, list)) else str(system_prompt)
-            },
-            {
-                "role": "user",
-                "content": json.dumps(user_prompt, indent=2) if isinstance(user_prompt, (dict, list)) else str(user_prompt)
-            }
-        ],
-        max_tokens=1500,
-        temperature=0.7,
-)
-
+            model='gpt-4o-mini',  # Changed to more stable model
+            messages=[
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": user_prompt}
+            ],
+            max_tokens= 1500,
+            temperature=0.7
+        )
+       
         insights_text = response.choices[0].message.content.strip()
-
+       
         return {
-            "success": True,
-            "insights": insights_text,
-            "tokens_used": getattr(response, "usage", {}).get("total_tokens", 0),
-            "model_used": options.get("model", "gpt-4o-mini"),
-            "analysis_type": analysis_type,
+            'success': True,
+            'insights': insights_text,
+            'tokens_used': response.usage.total_tokens if hasattr(response, 'usage') else 0,
+            'model_used': options.get('model', 'gpt-4o-mini'),
+            'analysis_type': analysis_type
         }
-
+       
     except Exception as e:
         app.logger.error(f"OpenAI API error: {e}")
         # Enhanced fallback
         return generate_enhanced_fallback_insights(user_query, insights_data)
-    
+  
 # Helper functions
 def calculate_variance(scores):
     """Calculate variance of scores"""
@@ -1751,165 +1696,170 @@ def determine_analysis_type(query):
     else:
         return 'general'
 
+# def get_custom_system_prompt(analysis_type, options, insights, user_query):
+   
+#     analysis_type = (analysis_type or "general").lower().strip()
+#     allowed = {"comparison","recommendation","mechanistic","safety","efficacy","general"}
+#     if analysis_type not in allowed:
+#         analysis_type = "general"
+#         base_prompt = (f"""
+#         You are a senior biomarker research analyst specializing in dermatology, cosmeceuticals, and clinical research.
+#         You help researchers and clinicians, interpret biomarker data, evaluate causative vs. correlative roles in skin diseases based on literature evidence (e.g., genetic studies, causal inference), and assess formulations for topical products that replace or modulate missing proteins/biomarkers.
+#         Emphasize confidence in causation, risks of dysregulation causing other diseases, and balanced risk-benefit profiles for curing target diseases while minimizing harms.
+#         Your task is to identify the task-type {analysis_type} of the user query and perform the actions accordingly.
+#     """)
+ 
+#     type_rules = {
+#                     {
+#                 "comparison": {
+#                     "focus": "Perform a head-to-head comparison of the specified biomarkers or formulations, evaluating causative vs. correlative roles in the skin disease and potential impacts on other conditions, using literature-derived evidence.",
+#                     "must_do": [
+#                     "Start with a 2–3 bullet **Executive Summary** of the key differences in causation confidence, modulation effects, and risks.",
+#                     "Provide a Comparison Table with rows for biomarkers/endpoints, causation evidence (e.g., genetic studies; confidence 0–100%), effect sizes on the target disease, risks of dysregulation (e.g., linked diseases), study design/size, and limitations.",
+#                     "Discuss trade-offs, strengths and weaknesses as therapeutic targets (e.g., direct replacement vs. signaling), and tie-breaker criteria such as overall risk–benefit for skin product inclusion.",
+#                     ]
+#                 },
+#                 "recommendation": {
+#                     "focus": "Produce clear, actionable recommendations for biomarkers or formulations grounded in causation evidence, potential to cure the target disease, and risks of causing other diseases.",
+#                     "must_do": [
+#                     "Start with a 2–3 bullet Executive Summary stating the top recommendation for product inclusion.",
+#                     "Provide a Ranked List of options with justification, causation confidence (0–100%), calculated disease risks (e.g., cure potential vs. harm probability), and explicit overall confidence (0–100%) for each.",
+#                     "List assumptions, applicability conditions (e.g., relative biomarker levels), and monitoring/next steps for formulation testing."
+#                     ]
+#                 },
+#                 "mechanistic": {
+#                     "focus": "Explain biological mechanisms linking biomarkers/modulations to skin disease outcomes, emphasizing causative pathways and risks of off-target effects.",
+#                     "must_do": [
+#                     "Start with a 2–3 bullet Executive Summary of the main causative pathways and confidence levels.",
+#                     "Outline a Mechanism Map (text): upstream trigger → pathway nodes (with causation evidence) → downstream biomarkers → clinical effects (cure potential) and risks (e.g., linked diseases).",
+#                     "Note causal strength (direct vs. inferred, with literature confidence 0–100%), and key uncertainties/gaps in modulation safety."
+#                     ]
+#                 },
+#                 "safety": {
+#                     "focus": "Evaluate safety signals, risks of dysregulation causing other diseases, contraindications, and risk mitigation for biomarker modulations.",
+#                     "must_do": [
+#                     "Start with a 2–3 bullet Executive Summary of safety posture, including causation-linked risks.",
+#                     "Provide a Safety Table: adverse event/disease risk, severity, incidence/probability (if known), population, source/study design (with causation confidence).",
+#                     "List contraindications, interactions with other biomarkers, monitoring plans, and risk–benefit notes for topical formulations."
+#                     ]
+#                 },
+#                 "efficacy": {
+#                     "focus": "Assess biomarker modulation effectiveness for disease cure and performance as causative targets.",
+#                     "must_do": [
+#                     "Start with a 2–3 bullet Executive Summary of efficacy signals tied to causation.",
+#                     "Report primary/secondary endpoints, effect sizes, precision (CI), clinical relevance thresholds, and links to causative roles.",
+#                     "Discuss generalizability (population, setting), consistency across studies, and risks of unintended disease effects."
+#                     ]
+#                 },
+#                 "general": {
+#                     "focus": "Provide a balanced overview covering comparative points, efficacy, safety, mechanisms, and causation as relevant to skin product formulations.",
+#                     "must_do": [
+#                     "Start with a 2–3 bullet Executive Summary.",
+#                     "Summarize the evidence base (causation confidence), then efficacy (cure potential), safety (disease risks), and mechanistic rationale.",
+#                     "Close with practical recommendations for formulation ranking and key uncertainties in causation/risks."
+#                     ]
+#                 }
+#                 }
+ 
+#     }
+   
+#     rules = type_rules[analysis_type]
+ 
+#     formatting_instructions = (
+#         "### Output Format (Markdown) for other types\n"
+#         "- **Executive Summary** (2–3 bullets, crisp, decision-oriented)\n"
+#         "- **Detailed Analysis** (evidence-based; cite concrete numbers if present)\n"
+#         "- **Clinical Implications** (who benefits, how to use, monitoring)\n"
+#         "- **Recommendations** (actionable next steps)\n"
+#         "\n"
+#         "If any requested field is missing in the insights, write **Not reported** rather than inventing values."
+#     )
+ 
+#     guardrails = (
+#         "### Grounding & Guardrails\n"
+#         "- Use only the **provided options** and **insights** for claims. Do **not** fabricate data.\n"
+#         "- Prefer concrete numbers (effect sizes, p-values, CIs, N) when present; otherwise state **Not reported**.\n"
+#         "- Be concise and clinically useful. Avoid unfalsifiable claims.\n"
+#         "- If the user’s query asks for a specific thing, **answer that first** before extra detail.\n"
+#         "- Keep Executive Summary to **max 3 bullets**."
+#     )
+ 
+#     # Inject user context last so the model prioritizes it
+#     user_block = (
+#         f"### User Query\n{user_query.strip()}\n" if user_query else
+#         "### User Query\nNot provided.\n"
+#     )
+   
+#     return f"""Base Prompt: {base_prompt.strip()},Different types of queries {type_rules} and rules are:{rules}, how the output should look like: {formatting_instructions},
+#                 rules for gaurdrailing: {guardrails},user query: {user_block}"""
+                
 def get_custom_system_prompt(analysis_type, options, insights, user_query):
-    
     analysis_type = (analysis_type or "general").lower().strip()
     allowed = {"comparison","recommendation","mechanistic","safety","efficacy","general"}
     if analysis_type not in allowed:
         analysis_type = "general"
-    
-    # f"""Get customized system prompt based on analysis type"""
-    # base_prompt = """You are a senior biomarker research analyst with expertise in dermatology, cosmetics, and clinical research. 
-    # You help researchers and clinicians understand complex biomarker data and treatment comparisons."""
-    
-    
-    # type_specific = {
-    #     'comparison': "Focus on detailed comparative analysis, highlighting key differences, similarities, and relative advantages.",
-    #     'recommendation': "Provide clear, actionable recommendations based on the data, with rationale and confidence levels.",
-    #     'mechanistic': "Explain the biological mechanisms and pathways involved, connecting biomarkers to physiological processes.",
-    #     'safety': "Emphasize safety considerations, potential risks, and contraindications based on biomarker profiles.",
-    #     'efficacy': "Focus on treatment effectiveness, clinical outcomes, and biomarker performance metrics.",
-    #     'general': "Provide a comprehensive overview addressing multiple aspects of the biomarker data."
-    # }
-    
-    # Task = f"""
-    # You task are Identify the Options from {options} and Data for the comparisons {insights} and provide the key inputs for the option/{type_specific}    
-    # """
-    
-    # formatting_instructions = """
-    # Structure your response with:
-    # - **Executive Summary** (2-3 key points)
-    # - **Detailed Analysis** (evidence-based insights)
-    # - **Clinical Implications** (practical applications)
-    # - **Recommendations** (actionable next steps)
-    
-    # Use markdown formatting, include specific data points, and maintain scientific rigor while being accessible.
-    # """
-    
-    # return f"{base_prompt}\n\n{type_specific.get(analysis_type, type_specific['general'])}\n\n\n\n {Task} and {formatting_instructions}"
-    
-    # base_prompt = (
-    #     "You are a senior biomarker research analyst specializing in dermatology, "
-    #     "cosmeceuticals, and clinical research. You help researchers and clinicians "
-    #     "interpret biomarker data and treatment evidence with scientific rigor and clarity."
-    # )
 
-    # type_rules = {
-    #     "comparison": {
-    #         "focus": "Perform a **head-to-head comparison** of the specified options using the provided insights.",
-    #         "must_do": [
-    #             "Start with a 2–3 bullet **Executive Summary** of the key differences.",
-    #             "Provide a **Comparison Table** with rows for endpoints/biomarkers, effect sizes, p-values/CIs (if available), study design/size, population, and limitations.",
-    #             "Discuss **trade-offs**, **strengths/weaknesses**, and **tie-breaker criteria** for selection.",
-    #         ],
-    #     },
-    #     "recommendation": {
-    #         "focus": "Produce **clear, actionable recommendations** grounded in the evidence.",
-    #         "must_do": [
-    #             "Start with a 2–3 bullet **Executive Summary** stating the top recommendation.",
-    #             "Provide a **Ranked List** of options with justification and an explicit **confidence (0–100)** for each.",
-    #             "List **assumptions**, **applicability conditions**, and **monitoring/next steps**.",
-    #         ],
-    #     },
-    #     "mechanistic": {
-    #         "focus": "Explain **biological mechanisms** linking treatments/biomarkers to skin outcomes.",
-    #         "must_do": [
-    #             "Start with a 2–3 bullet **Executive Summary** of the main pathways.",
-    #             "Outline a **Mechanism Map (text)**: upstream trigger → pathway nodes → downstream biomarkers → clinical effects.",
-    #             "Note **causal strength** (direct vs inferred), and key **uncertainties/gaps**.",
-    #         ],
-    #     },
-    #     "safety": {
-    #         "focus": "Evaluate **safety signals, risks, contraindications**, and **risk mitigation**.",
-    #         "must_do": [
-    #             "Start with a 2–3 bullet **Executive Summary** of safety posture.",
-    #             "Provide a **Safety Table**: adverse event, severity, incidence (if known), population, source/study design.",
-    #             "List **contraindications**, **DDIs**, **monitoring plans**, and **risk–benefit** notes.",
-    #         ],
-    #     },
-    #     "efficacy": {
-    #         "focus": "Assess **treatment effectiveness** and **biomarker performance**.",
-    #         "must_do": [
-    #             "Start with a 2–3 bullet **Executive Summary** of efficacy signals.",
-    #             "Report **primary/secondary endpoints**, effect sizes, precision (CI), and **clinical relevance thresholds**.",
-    #             "Discuss **generalizability** (population, setting), and **consistency** across studies.",
-    #         ],
-    #     },
-    #     "general": {
-    #         "focus": "Provide a balanced **overview** covering comparative points, efficacy, safety, and mechanisms as relevant.",
-    #         "must_do": [
-    #             "Start with a 2–3 bullet **Executive Summary**.",
-    #             "Summarize **evidence base**, then **efficacy**, **safety**, and **mechanistic rationale**.",
-    #             "Close with **practical recommendations** and key uncertainties.",
-    #         ],
-    #     },
-    # }
-    base_prompt = (f"""
-        You are a senior biomarker research analyst specializing in dermatology, cosmeceuticals, and clinical research.
-        You help researchers and clinicians, interpret biomarker data, evaluate causative vs. correlative roles in skin diseases based on literature evidence (e.g., genetic studies, causal inference), and assess formulations for topical products that replace or modulate missing proteins/biomarkers.
-        Emphasize confidence in causation, risks of dysregulation causing other diseases, and balanced risk-benefit profiles for curing target diseases while minimizing harms.
-        Your task is to identify the task-type {analysis_type} of the user query and perform the actions accordingly.
-    """)
- 
+    base_prompt = f"""
+    You are a senior biomarker research analyst specializing in dermatology, cosmeceuticals, and clinical research.
+    You help researchers and clinicians, interpret biomarker data, evaluate causative vs. correlative roles in skin diseases based on literature evidence (e.g., genetic studies, causal inference), and assess formulations for topical products that replace or modulate missing proteins/biomarkers.
+    Emphasize confidence in causation, risks of dysregulation causing other diseases, and balanced risk-benefit profiles for curing target diseases while minimizing harms.
+    Your task is to identify the task-type {analysis_type} of the user query and perform the actions accordingly.
+    """
+
     type_rules = {
-                    {
-                "comparison": {
-                    "focus": "Perform a head-to-head comparison of the specified biomarkers or formulations, evaluating causative vs. correlative roles in the skin disease and potential impacts on other conditions, using literature-derived evidence.",
-                    "must_do": [
-                    "Provide a Comparison Table with rows for biomarkers/endpoints, causation evidence (e.g., genetic studies; confidence 0–100%), effect sizes on the target disease, risks of dysregulation (e.g., linked diseases), study design/size, and limitations.",
-                    "Discuss trade-offs, strengths and weaknesses as therapeutic targets (e.g., direct replacement vs. signaling), and tie-breaker criteria such as overall risk–benefit for skin product inclusion.",
-                    "The table should be in JSON format. Note: Do not include any extra text, explanations, or formatting (e.g., no markdown code fences)."
-                    ]
-                },
-                "recommendation": {
-                    "focus": "Produce clear, actionable recommendations for biomarkers or formulations grounded in causation evidence, potential to cure the target disease, and risks of causing other diseases.",
-                    "must_do": [
-                    "Start with a 2–3 bullet Executive Summary stating the top recommendation for product inclusion.",
-                    "Provide a Ranked List of options with justification, causation confidence (0–100%), calculated disease risks (e.g., cure potential vs. harm probability), and explicit overall confidence (0–100%) for each.",
-                    "List assumptions, applicability conditions (e.g., relative biomarker levels), and monitoring/next steps for formulation testing."
-                    ]
-                },
-                "mechanistic": {
-                    "focus": "Explain biological mechanisms linking biomarkers/modulations to skin disease outcomes, emphasizing causative pathways and risks of off-target effects.",
-                    "must_do": [
-                    "Start with a 2–3 bullet Executive Summary of the main causative pathways and confidence levels.",
-                    "Outline a Mechanism Map (text): upstream trigger → pathway nodes (with causation evidence) → downstream biomarkers → clinical effects (cure potential) and risks (e.g., linked diseases).",
-                    "Note causal strength (direct vs. inferred, with literature confidence 0–100%), and key uncertainties/gaps in modulation safety."
-                    ]
-                },
-                "safety": {
-                    "focus": "Evaluate safety signals, risks of dysregulation causing other diseases, contraindications, and risk mitigation for biomarker modulations.",
-                    "must_do": [
-                    "Start with a 2–3 bullet Executive Summary of safety posture, including causation-linked risks.",
-                    "Provide a Safety Table: adverse event/disease risk, severity, incidence/probability (if known), population, source/study design (with causation confidence).",
-                    "List contraindications, interactions with other biomarkers, monitoring plans, and risk–benefit notes for topical formulations."
-                    ]
-                },
-                "efficacy": {
-                    "focus": "Assess biomarker modulation effectiveness for disease cure and performance as causative targets.",
-                    "must_do": [
-                    "Start with a 2–3 bullet Executive Summary of efficacy signals tied to causation.",
-                    "Report primary/secondary endpoints, effect sizes, precision (CI), clinical relevance thresholds, and links to causative roles.",
-                    "Discuss generalizability (population, setting), consistency across studies, and risks of unintended disease effects."
-                    ]
-                },
-                "general": {
-                    "focus": "Provide a balanced overview covering comparative points, efficacy, safety, mechanisms, and causation as relevant to skin product formulations.",
-                    "must_do": [
-                    "Start with a 2–3 bullet Executive Summary.",
-                    "Summarize the evidence base (causation confidence), then efficacy (cure potential), safety (disease risks), and mechanistic rationale.",
-                    "Close with practical recommendations for formulation ranking and key uncertainties in causation/risks."
-                    ]
-                }
-                }
- 
+        "comparison": {
+            "focus": "Perform a head-to-head comparison of the specified biomarkers or formulations, evaluating causative vs. correlative roles in the skin disease and potential impacts on other conditions, using literature-derived evidence.",
+            "must_do": [
+                "Start with a 2–3 bullet **Executive Summary** of the key differences in causation confidence, modulation effects, and risks.",
+                "Provide a Comparison Table with rows for biomarkers/endpoints, causation evidence (e.g., genetic studies; confidence 0–100%), effect sizes on the target disease, risks of dysregulation (e.g., linked diseases), study design/size, and limitations.",
+                "Discuss trade-offs, strengths and weaknesses as therapeutic targets (e.g., direct replacement vs. signaling), and tie-breaker criteria such as overall risk–benefit for skin product inclusion."
+            ]
+        },
+        "recommendation": {
+            "focus": "Produce clear, actionable recommendations for biomarkers or formulations grounded in causation evidence, potential to cure the target disease, and risks of causing other diseases.",
+            "must_do": [
+                "Start with a 2–3 bullet Executive Summary stating the top recommendation for product inclusion.",
+                "Provide a Ranked List of options with justification, causation confidence (0–100%), calculated disease risks (e.g., cure potential vs. harm probability), and explicit overall confidence (0–100%) for each.",
+                "List assumptions, applicability conditions (e.g., relative biomarker levels), and monitoring/next steps for formulation testing."
+            ]
+        },
+        "mechanistic": {
+            "focus": "Explain biological mechanisms linking biomarkers/modulations to skin disease outcomes, emphasizing causative pathways and risks of off-target effects.",
+            "must_do": [
+                "Start with a 2–3 bullet Executive Summary of the main causative pathways and confidence levels.",
+                "Outline a Mechanism Map (text): upstream trigger → pathway nodes (with causation evidence) → downstream biomarkers → clinical effects (cure potential) and risks (e.g., linked diseases).",
+                "Note causal strength (direct vs. inferred, with literature confidence 0–100%), and key uncertainties/gaps in modulation safety."
+            ]
+        },
+        "safety": {
+            "focus": "Evaluate safety signals, risks of dysregulation causing other diseases, contraindications, and risk mitigation for biomarker modulations.",
+            "must_do": [
+                "Start with a 2–3 bullet Executive Summary of safety posture, including causation-linked risks.",
+                "Provide a Safety Table: adverse event/disease risk, severity, incidence/probability (if known), population, source/study design (with causation confidence).",
+                "List contraindications, interactions with other biomarkers, monitoring plans, and risk–benefit notes for topical formulations."
+            ]
+        },
+        "efficacy": {
+            "focus": "Assess biomarker modulation effectiveness for disease cure and performance as causative targets.",
+            "must_do": [
+                "Start with a 2–3 bullet Executive Summary of efficacy signals tied to causation.",
+                "Report primary/secondary endpoints, effect sizes, precision (CI), clinical relevance thresholds, and links to causative roles.",
+                "Discuss generalizability (population, setting), consistency across studies, and risks of unintended disease effects."
+            ]
+        },
+        "general": {
+            "focus": "Provide a balanced overview covering comparative points, efficacy, safety, mechanisms, and causation as relevant to skin product formulations.",
+            "must_do": [
+                "Start with a 2–3 bullet Executive Summary.",
+                "Summarize the evidence base (causation confidence), then efficacy (cure potential), safety (disease risks), and mechanistic rationale.",
+                "Close with practical recommendations for formulation ranking and key uncertainties in causation/risks."
+            ]
+        }
     }
-   
+
     rules = type_rules[analysis_type]
- 
+
     formatting_instructions = (
-        f"### Output Format(Comparison Table) if {analysis_type} == 'comparison'\n"
-        "The table should be in JSON format. Note: Do not include any extra text, explanations, or formatting (e.g., no markdown code fences).\n"
         "### Output Format (Markdown) for other types\n"
         "- **Executive Summary** (2–3 bullets, crisp, decision-oriented)\n"
         "- **Detailed Analysis** (evidence-based; cite concrete numbers if present)\n"
@@ -1918,7 +1868,7 @@ def get_custom_system_prompt(analysis_type, options, insights, user_query):
         "\n"
         "If any requested field is missing in the insights, write **Not reported** rather than inventing values."
     )
- 
+
     guardrails = (
         "### Grounding & Guardrails\n"
         "- Use only the **provided options** and **insights** for claims. Do **not** fabricate data.\n"
@@ -1927,60 +1877,25 @@ def get_custom_system_prompt(analysis_type, options, insights, user_query):
         "- If the user’s query asks for a specific thing, **answer that first** before extra detail.\n"
         "- Keep Executive Summary to **max 3 bullets**."
     )
- 
-    # Inject user context last so the model prioritizes it
+
     user_block = (
         f"### User Query\n{user_query.strip()}\n" if user_query else
         "### User Query\nNot provided.\n"
     )
 
-    
-    # Echo options/insights verbatim (stringify safely)
-    import json
-    try:
-        options_str = json.dumps(options, ensure_ascii=False, indent=2)
-    except Exception:
-        options_str = str(options)
-    try:
-        insights_str = json.dumps(insights, ensure_ascii=False, indent=2)
-    except Exception:
-        insights_str = str(insights)
+    return f"""Base Prompt: {base_prompt.strip()},
+Different types of queries {type_rules} and rules are:{rules},
+how the output should look like: {formatting_instructions},
+rules for guardrailing: {guardrails},
+user query: {user_block}"""
 
-    context_block = (
-        "### Options (use only these)\n"
-        f"{options_str}\n\n"
-        "### Provided Insights / Evidence\n"
-        f"{insights_str}\n"
-    )
 
-    must_do_block = "\n".join(f"- {item}" for item in rules["must_do"])
-
-    task_block = (
-        "### Task\n"
-        f"{rules['focus']}\n"
-        "**Must include:**\n"
-        f"{must_do_block}\n"
-    )
-
-    return (
-        f"{base_prompt}\n\n"
-        f"{task_block}\n"
-        f"{formatting_instructions}\n\n"
-        f"{guardrails}\n\n"
-        f"{context_block}\n"
-        f"{user_block}"
-    )
-
-def build_enhanced_user_prompt(user_query, context, insights_data, analysis_type):
+def build_enhanced_user_prompt(user_query, context_str, insights_data, analysis_type):
     """Build enhanced user prompt"""
     return f"""
     Based on the following biomarker comparison data, please analyze and answer this question: "{user_query}"
     
-    ## Treatment Data:
-    {context.get('treatments_summary', 'No treatment data available')}
-    
-    ## Biomarker Analysis:
-    {context.get('biomarker_summary', 'No biomarker data available')}
+    {context_str}
     
     ## Data Statistics:
     - Total data points analyzed: {insights_data.get('total_data_points', 0)}
@@ -1992,11 +1907,7 @@ def build_enhanced_user_prompt(user_query, context, insights_data, analysis_type
     """
 
 def prepare_enhanced_openai_context(insights_data):
-    """Prepare structured context for OpenAI analysis"""
-    context = {
-        'treatments_summary': '',
-        'biomarker_summary': ''
-    }
+    """Prepare structured context for OpenAI analysis and return as a string"""
     
     # Treatments summary
     treatments_list = []
@@ -2011,18 +1922,24 @@ def prepare_enhanced_openai_context(insights_data):
             f"- **{treatment.get('name', 'Unknown')}** (Condition: {treatment.get('condition', 'Unknown')}): "
             f"{biomarker_count} biomarkers, Average score: {avg_score:.3f}"
         )
-    
-    context['treatments_summary'] = '\n'.join(treatments_list)
+    treatments_summary = "\n".join(treatments_list) or "No treatment data available"
     
     # Biomarker summary
     biomarker_list = []
     for biomarker, details in insights_data.get('biomarker_details', {}).items():
         condition_count = len(details.get('conditions', {}))
         biomarker_list.append(f"- **{biomarker}**: {condition_count} conditions analyzed")
+    biomarker_summary = "\n".join(biomarker_list[:10]) or "No biomarker data available"
     
-    context['biomarker_summary'] = '\n'.join(biomarker_list[:10])  # Limit to top 10
+    # Return as single formatted string
+    return f"""
+    ## Treatment Data:
+    {treatments_summary}
     
-    return context
+    ## Biomarker Analysis:
+    {biomarker_summary}
+    """
+
 
 def generate_enhanced_fallback_insights(user_query, insights_data):
     """Generate enhanced rule-based insights when OpenAI is not available"""
