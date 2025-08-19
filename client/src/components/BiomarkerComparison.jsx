@@ -599,15 +599,7 @@ const BiomarkerComparison = () => {
                 <p className="text-slate-600">
                   Level change analytics with real-time database integration
                 </p>
-                <div className="flex items-center gap-4 mt-2">
-                  <span className="text-xs bg-green-100 text-green-800 px-2 py-1 rounded-full font-medium">
-                    Level Change Scoring v3.0
-                  </span>
-                  <span className="text-xs text-slate-500">
-                    {systemStats.totalDataPoints} data points â€¢{" "}
-                    {systemStats.avgDataQuality.toFixed(1)}% avg quality
-                  </span>
-                </div>
+
               </div>
             </div>
           </div>
@@ -640,7 +632,7 @@ const BiomarkerComparison = () => {
                 className="flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-blue-600 to-blue-700 text-white rounded-lg hover:from-blue-700 hover:to-blue-800 transition-all shadow-sm hover:shadow-md font-medium transform hover:scale-105"
               >
                 <BarChart3 className="h-4 w-4" />
-                {showComparison ? "Hide" : "Show"} Level Change Analysis
+                {showComparison ? "Hide" : "Show"} Compare Treatments
               </button>
               <button
                 onClick={() => setShowSearch(!showSearch)}
@@ -850,11 +842,9 @@ const BiomarkerComparison = () => {
                     </p>
                     <div className="flex items-center gap-4 mt-2 text-xs text-slate-500">
                       <span>{stats.totalDataPoints} total data points</span>
-                      <span>â€¢</span>
                       <span>
                         {stats.reliableDataPoints} reliable measurements
                       </span>
-                      <span>â€¢</span>
                       <span>
                         {stats.dataReliability.toFixed(1)}% data quality
                       </span>
@@ -865,7 +855,7 @@ const BiomarkerComparison = () => {
 
               {/* Enhanced Comparison Controls */}
               <div className="flex flex-wrap items-center gap-4">
-                <div className="flex items-center gap-2">
+                {/* <div className="flex items-center gap-2">
                   <Filter className="h-4 w-4 text-slate-500" />
                   <input
                     type="text"
@@ -874,9 +864,9 @@ const BiomarkerComparison = () => {
                     onChange={(e) => setFilterBiomarker(e.target.value)}
                     className="px-3 py-2 border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 bg-white"
                   />
-                </div>
+                </div> */}
 
-                <div className="flex items-center gap-2">
+                {/* <div className="flex items-center gap-2">
                   <SortAsc className="h-4 w-4 text-slate-500" />
                   <select
                     value={sortBy}
@@ -887,9 +877,9 @@ const BiomarkerComparison = () => {
                     <option value="variance">Sort by Variance</option>
                     <option value="alphabetical">Sort Alphabetically</option>
                   </select>
-                </div>
+                </div> */}
 
-                <button
+                {/* <button
                   onClick={() => setShowValues(!showValues)}
                   className={`flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium transition-colors ${
                     showValues
@@ -903,7 +893,7 @@ const BiomarkerComparison = () => {
                     <EyeOff className="h-4 w-4" />
                   )}
                   Show Values
-                </button>
+                </button> */}
               </div>
             </div>
 

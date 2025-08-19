@@ -1,4 +1,4 @@
-from flask import Flask, request, abort, jsonify
+from flask import Flask, request, abort, jsonify, make_response
 from flask_cors import CORS
 import time
 import pandas as pd
@@ -8,8 +8,13 @@ from elasticsearch import Elasticsearch
 from collections import defaultdict
 from datetime import datetime
 import os
+import json
 from dotenv import load_dotenv
 from openai import AzureOpenAI
+from Key_insights_com import (
+    build_alias_lookup, standardize_Biomarker_list, elastic_search,
+    standardize_df_column, openai_response, biomarker_name_map,
+)
 
 # Load environment variables
 load_dotenv()
@@ -39,15 +44,12 @@ CORS(app, resources={
 # ────────────────────────────────
 VALID_CATEGORIES = ["inhibitor", "promoter"]
 
-# ────────────────────────────────
-# Elasticsearch configuration with authentication
+
 ES_ENDPOINT = os.getenv('elasticsearchendpoint', 'https://a25cbf64ca0d465a9d3eb5d9479121b6.eastus2.azure.elastic-cloud.com:443')
 ES_API_KEY = os.getenv('elasticapikey', '')
-ES_INDEX = os.getenv('ES_INDEX', 'trialpredict-biomarker-ci-t')
+ES_INDEX = os.getenv('ES_INDEX', 'trialpredict_ecs')
 
 
-# Add this environment variable loading
-# OPENAI_API_KEY = os.getenv('OPENAI_API_KEY', '')
 openai_client = AzureOpenAI(
     api_key=os.getenv("AZURE_API"),
     api_version=os.getenv("AZURE_API_VERSION"),
@@ -777,196 +779,6 @@ def calculate_score():
     result = biomarker_service.calculate_biomarker_score(biomarker_name, condition)
     return jsonify(result)
 
-# @app.route('/api/biomarker/data', methods=['POST'])
-# def get_biomarker_data():
-#     """
-#     POST body: { biomarker_name, condition?, page?, size? }
-#     If `condition` provided -> return single-condition results with all_conditions: False.
-#     If missing/empty -> fetch ALL conditions (via terms agg) and return aggregated results with all_conditions: True.
-#     Uses keyword fields ("Biomarker Name.keyword", "Condition.keyword") and ES index ES_INDEX.
-#     Robust fallback when ES is unavailable.
-#     """
-#     try:
-#         data = request.get_json(force=True) or {}
-#         biomarker_name = (data.get('biomarker_name') or '').strip()
-#         condition = (data.get('condition') or '').strip()
-#         page = int(data.get('page', 1) or 1)
-#         size = int(data.get('size', 20) or 20)
-
-#         if not biomarker_name:
-#             return jsonify({'success': False, 'error': 'biomarker_name is required'}), 400
-
-#         # Helper to run a search safely
-#         def _safe_search(body):
-#             try:
-#                 return biomarker_service.es.search(index=biomarker_service.index, body=body)
-#             except Exception as e:
-#                 app.logger.error(f"Elasticsearch search error: {e}")
-#                 return None
-
-#         def _safe_count(body):
-#             try:
-#                 return biomarker_service.es.count(index=biomarker_service.index, body=body)
-#             except Exception as e:
-#                 app.logger.error(f"Elasticsearch count error: {e}")
-#                 return None
-
-#         # If ES client unavailable, return structured fallback
-#         if not biomarker_service or not biomarker_service.es:
-#             return jsonify({
-#                 'success': True,
-#                 'biomarker': biomarker_name,
-#                 'data': [],
-#                 'by_condition': {} if condition else {'Aging': {'data': [], 'count': 0}, 'Pigmentation': {'data': [], 'count': 0}, 'Wrinkles': {'data': [], 'count': 0}},
-#                 'total_count': 0,
-#                 'page': page if condition else 1,
-#                 'size': size,
-#                 'total_pages': 1,
-#                 'all_conditions': not bool(condition),
-#                 'fallback': True,
-#                 'error': 'Elasticsearch not available'
-#             })
-
-#         # Single-condition flow
-#         if condition:
-#             from_offset = (page - 1) * size
-#             query = {
-#                 "from": from_offset,
-#                 "size": size,
-#                 "query": {
-#                     "bool": {
-#                         "must": [
-#                             {"term": {"Biomarker Name.keyword": biomarker_name}},
-#                             {"term": {"Condition.keyword": condition}}
-#                         ]
-#                     }
-#                 },
-#                 "sort": [
-#                     {"_score": {"order": "desc"}},
-#                     {"PDF_name.keyword": {"order": "asc"}}
-#                 ]
-#             }
-#             count_q = {
-#                 "query": {
-#                     "bool": {
-#                         "must": [
-#                             {"term": {"Biomarker Name.keyword": biomarker_name}},
-#                             {"term": {"Condition.keyword": condition}}
-#                         ]
-#                     }
-#                 }
-#             }
-
-#             res = _safe_search(query)
-#             cnt = _safe_count(count_q)
-#             docs = [hit['_source'] for hit in (res or {}).get('hits', {}).get('hits', [])] if res else []
-#             total_count = (cnt or {}).get('count', 0)
-#             total_pages = max(1, (total_count + size - 1) // size)  # Calculate total pages
-
-#             return jsonify({
-#                 'success': True,
-#                 'biomarker': biomarker_name,
-#                 'condition': condition,
-#                 'data': docs,
-#                 'by_condition': {condition: {'data': docs, 'count': total_count}},
-#                 'total_count': total_count,
-#                 'page': page,
-#                 'size': size,
-#                 'total_pages': total_pages,
-#                 'all_conditions': False
-#             })
-
-#         # All-conditions flow
-#         # 1) fetch all conditions via terms agg on Condition.keyword
-#         agg_query = {
-#             "size": 0,
-#             "query": {
-#                 "term": {"Biomarker Name.keyword": biomarker_name}
-#             },
-#             "aggs": {
-#                 "conditions": {
-#                     "terms": {"field": "Condition.keyword", "size": 1000}
-#                 }
-#             }
-#         }
-#         agg_res = _safe_search(agg_query)
-#         agg_buckets = (((agg_res or {}).get('aggregations') or {}).get('conditions') or {}).get('buckets', [])
-#         all_conditions = [b['key'] for b in agg_buckets if b.get('doc_count', 0) > 0]
-
-#         # Fallback to service cache helper if agg failed
-#         if not all_conditions:
-#             conds = biomarker_service.get_conditions()
-#             if conds.get('success'):
-#                 all_conditions = conds.get('conditions', [])
-#             else:
-#                 # Hard fallback
-#                 all_conditions = ['Aging', 'Pigmentation', 'Wrinkles', 'Acne', 'Dryness', 'Sensitivity']
-
-#         by_condition = {}
-#         all_docs = []
-#         total_count = 0
-
-#         for cond in all_conditions:
-#             # For ALL-conditions flow we always return page=1 by spec; we still cap size per condition
-#             from_offset = 0
-#             search_q = {
-#                 "from": from_offset,
-#                 "size": size,
-#                 "query": {
-#                     "bool": {
-#                         "must": [
-#                             {"term": {"Biomarker Name.keyword": biomarker_name}},
-#                             {"term": {"Condition.keyword": cond}}
-#                         ]
-#                     }
-#                 },
-#                 "sort": [
-#                     {"_score": {"order": "desc"}},
-#                     {"PDF_name.keyword": {"order": "asc"}}
-#                 ]
-#             }
-#             count_q = {
-#                 "query": {
-#                     "bool": {
-#                         "must": [
-#                             {"term": {"Biomarker Name.keyword": biomarker_name}},
-#                             {"term": {"Condition.keyword": cond}}
-#                         ]
-#                     }
-#                 }
-#             }
-#             res = _safe_search(search_q)
-#             cnt = _safe_count(count_q)
-#             docs = [hit['_source'] for hit in (res or {}).get('hits', {}).get('hits', [])] if res else []
-#             ccount = (cnt or {}).get('count', 0)
-
-#             # Only include conditions that have data
-#             if ccount > 0 or docs:
-#                 by_condition[cond] = {'data': docs, 'count': ccount}
-#                 all_docs.extend(docs)
-#                 total_count += ccount
-
-#         return jsonify({
-#             'success': True,
-#             'biomarker': biomarker_name,
-#             'data': all_docs,
-#             'by_condition': by_condition,
-#             'total_count': total_count,
-#             'page': 1,
-#             'size': size,
-#             'total_pages': 1,
-#             'all_conditions': True
-#         })
-#     except Exception as e:
-#         app.logger.exception("Unhandled error in /api/biomarker/data")
-#         return jsonify({
-#             'success': False,
-#             'error': str(e),
-#             'all_conditions': False,
-#             'total_pages': 1
-#         }), 500
-
-
 
 
 def _get_es_and_index():
@@ -1008,14 +820,165 @@ def _safe_sort():
     return [{"_score": {"order": "desc"}}]
     # or: return [{"_score": {"order": "desc"}}, {"PDF_name.keyword": {"order": "asc", "unmapped_type": "keyword"}}]
 
-@app.route('/api/biomarker/data', methods=['POST'])
+# @app.route('/api/biomarker/data', methods=['POST'])
+# def get_biomarker_data():
+#     """
+#     POST body: { biomarker_name, condition?, page?, size? }
+#     - If `condition` is provided -> single-condition results (paginated) with all_conditions:false
+#     - If not provided -> fetch all conditions via terms agg (best effort) with all_conditions:true
+#     Returns real ES data only. No mock rows are generated when ES is available.
+#     """
+#     try:
+#         data = request.get_json(force=True) or {}
+#         biomarker_name = (data.get('biomarker_name') or '').strip()
+#         condition = (data.get('condition') or '').strip()
+#         page = int(data.get('page') or 1)
+#         size = int(data.get('size') or 20)
+
+#         if not biomarker_name:
+#             return jsonify({'success': False, 'error': 'biomarker_name is required'}), 400
+
+#         es_client, index = _get_es_and_index()
+#         if not es_client:
+#             # ES unavailable -> minimal fallback (no fabricated docs)
+#             return jsonify({
+#                 'success': True, 'biomarker': biomarker_name, 'data': [],
+#                 'by_condition': {} if not condition else {condition: {'data': [], 'count': 0}},
+#                 'total_count': 0, 'page': 1 if not condition else page, 'size': size,
+#                 'total_pages': 1, 'all_conditions': not bool(condition),
+#                 'fallback': True, 'error': 'Elasticsearch client not available'
+#             })
+
+#         try:
+#             if not es_client.ping():
+#                 return jsonify({
+#                     'success': True, 'biomarker': biomarker_name, 'data': [],
+#                     'by_condition': {} if not condition else {condition: {'data': [], 'count': 0}},
+#                     'total_count': 0, 'page': 1 if not condition else page, 'size': size,
+#                     'total_pages': 1, 'all_conditions': not bool(condition),
+#                     'fallback': True, 'error': 'Elasticsearch ping failed'
+#                 })
+#         except Exception as e:
+#             app.logger.error(f"ES ping error: {e}")
+#             return jsonify({
+#                 'success': True, 'biomarker': biomarker_name, 'data': [],
+#                 'by_condition': {} if not condition else {condition: {'data': [], 'count': 0}},
+#                 'total_count': 0, 'page': 1 if not condition else page, 'size': size,
+#                 'total_pages': 1, 'all_conditions': not bool(condition),
+#                 'fallback': True, 'error': 'Elasticsearch ping error'
+#             })
+
+#         # ----------------- SINGLE CONDITION -----------------
+#         if condition:
+#             from_offset = max(0, (page - 1) * size)
+#             must_clauses = [_bm_clause(biomarker_name), _cond_clause(condition)]
+#             q = {
+#                 "from": from_offset, "size": size,
+#                 "query": {"bool": {"must": must_clauses}},
+#                 "sort": _safe_sort()
+#             }
+#             cq = {"query": {"bool": {"must": must_clauses}}}
+
+#             try:
+#                 res = es_client.search(index=index, body=q)
+#                 cnt = es_client.count(index=index, body=cq)
+#             except Exception as e:
+#                 app.logger.error(f"ES search error (single-condition): {e}")
+#                 return jsonify({
+#                     'success': True, 'biomarker': biomarker_name, 'condition': condition,
+#                     'data': [], 'by_condition': {condition: {'data': [], 'count': 0}},
+#                     'total_count': 0, 'page': page, 'size': size, 'total_pages': 1,
+#                     'all_conditions': False, 'fallback': True, 'error': 'Elasticsearch search error'
+#                 })
+
+#             hits = (res or {}).get('hits', {}).get('hits', []) or []
+#             docs = [h.get('_source', {}) for h in hits]
+#             total_count = int((cnt or {}).get('count', 0))
+#             total_pages = max(1, (total_count + size - 1) // size)
+
+#             # NOTE: 0 hits is valid (fallback=False). UI will no longer show “mock”.
+#             return jsonify({
+#                 'success': True, 'biomarker': biomarker_name, 'condition': condition,
+#                 'data': docs, 'by_condition': {condition: {'data': docs, 'count': total_count}},
+#                 'total_count': total_count, 'page': page, 'size': size, 'total_pages': total_pages,
+#                 'all_conditions': False, 'fallback': False
+#             })
+
+#         # ----------------- ALL CONDITIONS -----------------
+#         # Best-effort terms aggregation for conditions
+#         agg = {
+#             "size": 0,
+#             "query": _bm_clause(biomarker_name),
+#             "aggs": {"conditions": {"terms": {"field": "Condition.keyword", "size": 1000}}}
+#         }
+#         all_conditions = []
+#         try:
+#             agg_res = es_client.search(index=index, body=agg)
+#             buckets = (agg_res.get('aggregations', {})
+#                                  .get('conditions', {})
+#                                  .get('buckets', []))
+#             all_conditions = [b['key'] for b in buckets if b.get('doc_count', 0) > 0]
+#         except Exception as e:
+#             app.logger.warning(f"Condition agg failed (will return empty): {e}")
+
+#         by_condition = {}
+#         all_docs = []
+#         total_count = 0
+
+#         # Fetch up to `size` docs per condition (page=1 by spec)
+#         for cond in all_conditions:
+#             must_clauses = [_bm_clause(biomarker_name), _cond_clause(cond)]
+#             q = {
+#                 "from": 0, "size": size,
+#                 "query": {"bool": {"must": must_clauses}},
+#                 "sort": _safe_sort()
+#             }
+#             cq = {"query": {"bool": {"must": must_clauses}}}
+
+#             try:
+#                 res = es_client.search(index=index, body=q)
+#                 cnt = es_client.count(index=index, body=cq)
+#             except Exception as e:
+#                 app.logger.error(f"ES search error for condition '{cond}': {e}")
+#                 continue  # skip this condition on error
+
+#             hits = (res or {}).get('hits', {}).get('hits', []) or []
+#             docs = [h.get('_source', {}) for h in hits]
+#             ccount = int((cnt or {}).get('count', 0))
+
+#             if ccount > 0:
+#                 by_condition[cond] = {'data': docs, 'count': ccount}
+#                 all_docs.extend(docs)
+#                 total_count += ccount
+
+#         return jsonify({
+#             'success': True, 'biomarker': biomarker_name,
+#             'data': all_docs, 'by_condition': by_condition, 'total_count': total_count,
+#             'page': 1, 'size': size, 'total_pages': 1, 'all_conditions': True, 'fallback': False
+#         })
+
+#     except Exception as e:
+#         app.logger.exception("Unhandled error in /api/biomarker/data")
+#         return jsonify({'success': False, 'error': str(e), 'all_conditions': False, 'total_pages': 1}), 500
+
+@app.route('/api/biomarker/data', methods=['POST', 'OPTIONS'])
 def get_biomarker_data():
     """
     POST body: { biomarker_name, condition?, page?, size? }
     - If `condition` is provided -> single-condition results (paginated) with all_conditions:false
     - If not provided -> fetch all conditions via terms agg (best effort) with all_conditions:true
     Returns real ES data only. No mock rows are generated when ES is available.
+    
+    UPDATED: Now includes ECS, Classification, and Key_Insight_ECS fields
     """
+    # Handle CORS preflight
+    if request.method == 'OPTIONS':
+        response = make_response()
+        response.headers.add("Access-Control-Allow-Origin", "*")
+        response.headers.add('Access-Control-Allow-Headers', "Content-Type,Authorization")
+        response.headers.add('Access-Control-Allow-Methods', "POST,OPTIONS")
+        return response
+    
     try:
         data = request.get_json(force=True) or {}
         biomarker_name = (data.get('biomarker_name') or '').strip()
@@ -1060,10 +1023,16 @@ def get_biomarker_data():
         if condition:
             from_offset = max(0, (page - 1) * size)
             must_clauses = [_bm_clause(biomarker_name), _cond_clause(condition)]
+            
+            # Updated to include all fields including ECS fields
             q = {
-                "from": from_offset, "size": size,
+                "from": from_offset, 
+                "size": size,
                 "query": {"bool": {"must": must_clauses}},
-                "sort": _safe_sort()
+                "sort": _safe_sort(),
+                "_source": {
+                    "includes": ["*"]  # Include all fields
+                }
             }
             cq = {"query": {"bool": {"must": must_clauses}}}
 
@@ -1072,19 +1041,45 @@ def get_biomarker_data():
                 cnt = es_client.count(index=index, body=cq)
             except Exception as e:
                 app.logger.error(f"ES search error (single-condition): {e}")
+                # Return mock data with ECS fields
+                mock_data = []
+                for i in range(10):
+                    mock_data.append({
+                        'Document_id': f'mock_{i}',
+                        'Subject_ID': f'S{str(i+1).zfill(3)}',
+                        'Biomarker_Name': biomarker_name,
+                        'Biomarker_Level_Change': ['increase', 'decrease', 'unchanged'][i % 3],
+                        'Condition': condition,
+                        'ECS': 60 + (i * 5) % 40,  # Mock ECS score between 60-100
+                        'Classification': ['Causality', 'Correlative', 'Suggestive'][i % 3],
+                        'Key_Insight_ECS': f'Mock insight for {biomarker_name} showing evidence of {["causal", "correlative", "suggestive"][i % 3]} relationship',
+                        'Confidence_Score': 70 + (i * 3) % 30,
+                        'Treatment_Name': f'Treatment {chr(65 + (i % 6))}',
+                        'Type_of_Study': ['Clinical trial', 'In vitro study', 'Animal study'][i % 3],
+                        'Age': 30 + i * 2,
+                        'Sex': ['Male', 'Female'][i % 2]
+                    })
+                
                 return jsonify({
                     'success': True, 'biomarker': biomarker_name, 'condition': condition,
-                    'data': [], 'by_condition': {condition: {'data': [], 'count': 0}},
-                    'total_count': 0, 'page': page, 'size': size, 'total_pages': 1,
-                    'all_conditions': False, 'fallback': True, 'error': 'Elasticsearch search error'
+                    'data': mock_data, 'by_condition': {condition: {'data': mock_data, 'count': len(mock_data)}},
+                    'total_count': len(mock_data), 'page': page, 'size': size, 'total_pages': 1,
+                    'all_conditions': False, 'fallback': True, 'error': 'Using mock data - Elasticsearch search error'
                 })
 
             hits = (res or {}).get('hits', {}).get('hits', []) or []
-            docs = [h.get('_source', {}) for h in hits]
+            docs = []
+            for h in hits:
+                doc = h.get('_source', {})
+                # Ensure ECS fields are included with fallback to different field names
+                # doc['ECS'] = doc.get('ECS') or doc.get('ECS (Evidence Causality Score)') or doc.get('(Evidence Causality Score)')
+                doc['Classification'] = doc.get('Classification') or doc.get('Classification_(Cause/Correlation)') or doc.get('Classification (Cause/Correlation)')
+                # doc['Key_Insight_ECS'] = doc.get('Key_Insight_ECS') or doc.get('Key Insight_ECS') or doc.get('Key_Insight')
+                docs.append(doc)
+                
             total_count = int((cnt or {}).get('count', 0))
             total_pages = max(1, (total_count + size - 1) // size)
 
-            # NOTE: 0 hits is valid (fallback=False). UI will no longer show “mock”.
             return jsonify({
                 'success': True, 'biomarker': biomarker_name, 'condition': condition,
                 'data': docs, 'by_condition': {condition: {'data': docs, 'count': total_count}},
@@ -1093,7 +1088,6 @@ def get_biomarker_data():
             })
 
         # ----------------- ALL CONDITIONS -----------------
-        # Best-effort terms aggregation for conditions
         agg = {
             "size": 0,
             "query": _bm_clause(biomarker_name),
@@ -1113,13 +1107,16 @@ def get_biomarker_data():
         all_docs = []
         total_count = 0
 
-        # Fetch up to `size` docs per condition (page=1 by spec)
         for cond in all_conditions:
             must_clauses = [_bm_clause(biomarker_name), _cond_clause(cond)]
             q = {
-                "from": 0, "size": size,
+                "from": 0, 
+                "size": size,
                 "query": {"bool": {"must": must_clauses}},
-                "sort": _safe_sort()
+                "sort": _safe_sort(),
+                "_source": {
+                    "includes": ["*"]  # Include all fields
+                }
             }
             cq = {"query": {"bool": {"must": must_clauses}}}
 
@@ -1128,10 +1125,18 @@ def get_biomarker_data():
                 cnt = es_client.count(index=index, body=cq)
             except Exception as e:
                 app.logger.error(f"ES search error for condition '{cond}': {e}")
-                continue  # skip this condition on error
+                continue
 
             hits = (res or {}).get('hits', {}).get('hits', []) or []
-            docs = [h.get('_source', {}) for h in hits]
+            docs = []
+            for h in hits:
+                doc = h.get('_source', {})
+                # Ensure ECS fields are included with multiple fallbacks
+                # doc['ECS'] = doc.get('ECS') or doc.get('Evidence_Causality_Score') or doc.get('Evidence Causality Score')
+                doc['Classification'] = doc.get('Classification') or doc.get('Classification_(Cause/Correlation)') or doc.get('Classification (Cause/Correlation)')
+                # doc['Key_Insight_ECS'] = doc.get('Key_Insight_ECS') or doc.get('Key Insight_ECS') or doc.get('Key_Insight')
+                docs.append(doc)
+
             ccount = int((cnt or {}).get('count', 0))
 
             if ccount > 0:
@@ -1148,6 +1153,7 @@ def get_biomarker_data():
     except Exception as e:
         app.logger.exception("Unhandled error in /api/biomarker/data")
         return jsonify({'success': False, 'error': str(e), 'all_conditions': False, 'total_pages': 1}), 500
+
 @app.route('/api/treatments/compare', methods=['POST'])
 def compare_treatments():
     """Compare two treatments"""
@@ -1368,7 +1374,7 @@ def handle_api_error(error, context="Unknown"):
         'timestamp': datetime.now().isoformat()
     }
 
-# Fixed OpenAI route (synchronous)
+
 @app.route('/api/insights/generate', methods=['POST'])
 @rate_limit(max_requests=5, window_seconds=300)
 def generate_treatment_insights():
@@ -1582,47 +1588,104 @@ def process_single_treatment_sync(treatment_info, all_biomarkers):
     
     return treatment_analysis
 
+# def generate_openai_insights_sync(user_query, insights_data, options={}):
+#     """Synchronous OpenAI insights generation"""
+#     try:
+#         # Prepare context
+#         context = prepare_enhanced_openai_context(insights_data)
+        
+#         # Determine analysis type from query
+#         analysis_type = determine_analysis_type(user_query)
+        
+#         # Custom system prompt
+#         system_prompt = get_custom_system_prompt(analysis_type, options, insights_data, user_query)
+        
+#         # Enhanced user prompt
+#         user_prompt = build_enhanced_user_prompt(user_query, context, insights_data, analysis_type)
+        
+#         # Make OpenAI API call
+#         response = openai_client.chat.completions.create(
+#             model='gpt-4o-mini',  # Changed to more stable model
+#             messages=[
+#                 {"role": "system", "content": system_prompt},
+#                 {"role": "user", "content": user_prompt}
+#             ],
+#             max_tokens= 1500,
+#             temperature=0.7
+#         )
+        
+#         insights_text = response.choices[0].message.content.strip()
+        
+#         return {
+#             'success': True,
+#             'insights': insights_text,
+#             'tokens_used': response.usage.total_tokens if hasattr(response, 'usage') else 0,
+#             'model_used': options.get('model', 'gpt-4o-mini'),
+#             'analysis_type': analysis_type
+#         }
+        
+#     except Exception as e:
+#         app.logger.error(f"OpenAI API error: {e}")
+#         # Enhanced fallback
+#         return generate_enhanced_fallback_insights(user_query, insights_data)
+
 def generate_openai_insights_sync(user_query, insights_data, options={}):
     """Synchronous OpenAI insights generation"""
     try:
-        # Prepare context
+        # Prepare context safely (ensure string)
         context = prepare_enhanced_openai_context(insights_data)
-        
+        if isinstance(context, (dict, list)):
+            context = json.dumps(context, indent=2)
+
         # Determine analysis type from query
         analysis_type = determine_analysis_type(user_query)
-        
-        # Custom system prompt
-        system_prompt = get_custom_system_prompt(analysis_type, options, insights_data, user_query)
-        
-        # Enhanced user prompt
-        user_prompt = build_enhanced_user_prompt(user_query, context, insights_data, analysis_type)
-        
-        # Make OpenAI API call
-        response = openai_client.chat.completions.create(
-            model='gpt-4o-mini',  # Changed to more stable model
-            messages=[
-                {"role": "system", "content": system_prompt},
-                {"role": "user", "content": user_prompt}
-            ],
-            max_tokens= 1500,
-            temperature=0.7
+
+        # Custom system prompt (ensure string)
+        system_prompt = get_custom_system_prompt(
+            analysis_type, options, insights_data, user_query
         )
-        
+        if isinstance(system_prompt, (dict, list)):
+            system_prompt = json.dumps(system_prompt, indent=2)
+
+        # Enhanced user prompt (ensure string)
+        user_prompt = build_enhanced_user_prompt(
+            user_query, context, insights_data, analysis_type
+        )
+        if isinstance(user_prompt, (dict, list)):
+            user_prompt = json.dumps(user_prompt, indent=2)
+
+        # --- OpenAI API call ---
+        response = openai_client.chat.completions.create(
+        model=options.get("model", "gpt-4o-mini"),
+        messages=[
+            {
+                "role": "system",
+                "content": json.dumps(system_prompt, indent=2) if isinstance(system_prompt, (dict, list)) else str(system_prompt)
+            },
+            {
+                "role": "user",
+                "content": json.dumps(user_prompt, indent=2) if isinstance(user_prompt, (dict, list)) else str(user_prompt)
+            }
+        ],
+        max_tokens=1500,
+        temperature=0.7,
+)
+
         insights_text = response.choices[0].message.content.strip()
-        
+
         return {
-            'success': True,
-            'insights': insights_text,
-            'tokens_used': response.usage.total_tokens if hasattr(response, 'usage') else 0,
-            'model_used': options.get('model', 'gpt-4o-mini'),
-            'analysis_type': analysis_type
+            "success": True,
+            "insights": insights_text,
+            "tokens_used": getattr(response, "usage", {}).get("total_tokens", 0),
+            "model_used": options.get("model", "gpt-4o-mini"),
+            "analysis_type": analysis_type,
         }
-        
+
     except Exception as e:
         app.logger.error(f"OpenAI API error: {e}")
         # Enhanced fallback
         return generate_enhanced_fallback_insights(user_query, insights_data)
-
+    
 # Helper functions
 def calculate_variance(scores):
     """Calculate variance of scores"""
@@ -1725,67 +1788,129 @@ def get_custom_system_prompt(analysis_type, options, insights, user_query):
     
     # return f"{base_prompt}\n\n{type_specific.get(analysis_type, type_specific['general'])}\n\n\n\n {Task} and {formatting_instructions}"
     
-    base_prompt = (
-        "You are a senior biomarker research analyst specializing in dermatology, "
-        "cosmeceuticals, and clinical research. You help researchers and clinicians "
-        "interpret biomarker data and treatment evidence with scientific rigor and clarity."
-    )
+    # base_prompt = (
+    #     "You are a senior biomarker research analyst specializing in dermatology, "
+    #     "cosmeceuticals, and clinical research. You help researchers and clinicians "
+    #     "interpret biomarker data and treatment evidence with scientific rigor and clarity."
+    # )
 
+    # type_rules = {
+    #     "comparison": {
+    #         "focus": "Perform a **head-to-head comparison** of the specified options using the provided insights.",
+    #         "must_do": [
+    #             "Start with a 2–3 bullet **Executive Summary** of the key differences.",
+    #             "Provide a **Comparison Table** with rows for endpoints/biomarkers, effect sizes, p-values/CIs (if available), study design/size, population, and limitations.",
+    #             "Discuss **trade-offs**, **strengths/weaknesses**, and **tie-breaker criteria** for selection.",
+    #         ],
+    #     },
+    #     "recommendation": {
+    #         "focus": "Produce **clear, actionable recommendations** grounded in the evidence.",
+    #         "must_do": [
+    #             "Start with a 2–3 bullet **Executive Summary** stating the top recommendation.",
+    #             "Provide a **Ranked List** of options with justification and an explicit **confidence (0–100)** for each.",
+    #             "List **assumptions**, **applicability conditions**, and **monitoring/next steps**.",
+    #         ],
+    #     },
+    #     "mechanistic": {
+    #         "focus": "Explain **biological mechanisms** linking treatments/biomarkers to skin outcomes.",
+    #         "must_do": [
+    #             "Start with a 2–3 bullet **Executive Summary** of the main pathways.",
+    #             "Outline a **Mechanism Map (text)**: upstream trigger → pathway nodes → downstream biomarkers → clinical effects.",
+    #             "Note **causal strength** (direct vs inferred), and key **uncertainties/gaps**.",
+    #         ],
+    #     },
+    #     "safety": {
+    #         "focus": "Evaluate **safety signals, risks, contraindications**, and **risk mitigation**.",
+    #         "must_do": [
+    #             "Start with a 2–3 bullet **Executive Summary** of safety posture.",
+    #             "Provide a **Safety Table**: adverse event, severity, incidence (if known), population, source/study design.",
+    #             "List **contraindications**, **DDIs**, **monitoring plans**, and **risk–benefit** notes.",
+    #         ],
+    #     },
+    #     "efficacy": {
+    #         "focus": "Assess **treatment effectiveness** and **biomarker performance**.",
+    #         "must_do": [
+    #             "Start with a 2–3 bullet **Executive Summary** of efficacy signals.",
+    #             "Report **primary/secondary endpoints**, effect sizes, precision (CI), and **clinical relevance thresholds**.",
+    #             "Discuss **generalizability** (population, setting), and **consistency** across studies.",
+    #         ],
+    #     },
+    #     "general": {
+    #         "focus": "Provide a balanced **overview** covering comparative points, efficacy, safety, and mechanisms as relevant.",
+    #         "must_do": [
+    #             "Start with a 2–3 bullet **Executive Summary**.",
+    #             "Summarize **evidence base**, then **efficacy**, **safety**, and **mechanistic rationale**.",
+    #             "Close with **practical recommendations** and key uncertainties.",
+    #         ],
+    #     },
+    # }
+    base_prompt = (f"""
+        You are a senior biomarker research analyst specializing in dermatology, cosmeceuticals, and clinical research.
+        You help researchers and clinicians, interpret biomarker data, evaluate causative vs. correlative roles in skin diseases based on literature evidence (e.g., genetic studies, causal inference), and assess formulations for topical products that replace or modulate missing proteins/biomarkers.
+        Emphasize confidence in causation, risks of dysregulation causing other diseases, and balanced risk-benefit profiles for curing target diseases while minimizing harms.
+        Your task is to identify the task-type {analysis_type} of the user query and perform the actions accordingly.
+    """)
+ 
     type_rules = {
-        "comparison": {
-            "focus": "Perform a **head-to-head comparison** of the specified options using the provided insights.",
-            "must_do": [
-                "Start with a 2–3 bullet **Executive Summary** of the key differences.",
-                "Provide a **Comparison Table** with rows for endpoints/biomarkers, effect sizes, p-values/CIs (if available), study design/size, population, and limitations.",
-                "Discuss **trade-offs**, **strengths/weaknesses**, and **tie-breaker criteria** for selection.",
-            ],
-        },
-        "recommendation": {
-            "focus": "Produce **clear, actionable recommendations** grounded in the evidence.",
-            "must_do": [
-                "Start with a 2–3 bullet **Executive Summary** stating the top recommendation.",
-                "Provide a **Ranked List** of options with justification and an explicit **confidence (0–100)** for each.",
-                "List **assumptions**, **applicability conditions**, and **monitoring/next steps**.",
-            ],
-        },
-        "mechanistic": {
-            "focus": "Explain **biological mechanisms** linking treatments/biomarkers to skin outcomes.",
-            "must_do": [
-                "Start with a 2–3 bullet **Executive Summary** of the main pathways.",
-                "Outline a **Mechanism Map (text)**: upstream trigger → pathway nodes → downstream biomarkers → clinical effects.",
-                "Note **causal strength** (direct vs inferred), and key **uncertainties/gaps**.",
-            ],
-        },
-        "safety": {
-            "focus": "Evaluate **safety signals, risks, contraindications**, and **risk mitigation**.",
-            "must_do": [
-                "Start with a 2–3 bullet **Executive Summary** of safety posture.",
-                "Provide a **Safety Table**: adverse event, severity, incidence (if known), population, source/study design.",
-                "List **contraindications**, **DDIs**, **monitoring plans**, and **risk–benefit** notes.",
-            ],
-        },
-        "efficacy": {
-            "focus": "Assess **treatment effectiveness** and **biomarker performance**.",
-            "must_do": [
-                "Start with a 2–3 bullet **Executive Summary** of efficacy signals.",
-                "Report **primary/secondary endpoints**, effect sizes, precision (CI), and **clinical relevance thresholds**.",
-                "Discuss **generalizability** (population, setting), and **consistency** across studies.",
-            ],
-        },
-        "general": {
-            "focus": "Provide a balanced **overview** covering comparative points, efficacy, safety, and mechanisms as relevant.",
-            "must_do": [
-                "Start with a 2–3 bullet **Executive Summary**.",
-                "Summarize **evidence base**, then **efficacy**, **safety**, and **mechanistic rationale**.",
-                "Close with **practical recommendations** and key uncertainties.",
-            ],
-        },
+                    {
+                "comparison": {
+                    "focus": "Perform a head-to-head comparison of the specified biomarkers or formulations, evaluating causative vs. correlative roles in the skin disease and potential impacts on other conditions, using literature-derived evidence.",
+                    "must_do": [
+                    "Provide a Comparison Table with rows for biomarkers/endpoints, causation evidence (e.g., genetic studies; confidence 0–100%), effect sizes on the target disease, risks of dysregulation (e.g., linked diseases), study design/size, and limitations.",
+                    "Discuss trade-offs, strengths and weaknesses as therapeutic targets (e.g., direct replacement vs. signaling), and tie-breaker criteria such as overall risk–benefit for skin product inclusion.",
+                    "The table should be in JSON format. Note: Do not include any extra text, explanations, or formatting (e.g., no markdown code fences)."
+                    ]
+                },
+                "recommendation": {
+                    "focus": "Produce clear, actionable recommendations for biomarkers or formulations grounded in causation evidence, potential to cure the target disease, and risks of causing other diseases.",
+                    "must_do": [
+                    "Start with a 2–3 bullet Executive Summary stating the top recommendation for product inclusion.",
+                    "Provide a Ranked List of options with justification, causation confidence (0–100%), calculated disease risks (e.g., cure potential vs. harm probability), and explicit overall confidence (0–100%) for each.",
+                    "List assumptions, applicability conditions (e.g., relative biomarker levels), and monitoring/next steps for formulation testing."
+                    ]
+                },
+                "mechanistic": {
+                    "focus": "Explain biological mechanisms linking biomarkers/modulations to skin disease outcomes, emphasizing causative pathways and risks of off-target effects.",
+                    "must_do": [
+                    "Start with a 2–3 bullet Executive Summary of the main causative pathways and confidence levels.",
+                    "Outline a Mechanism Map (text): upstream trigger → pathway nodes (with causation evidence) → downstream biomarkers → clinical effects (cure potential) and risks (e.g., linked diseases).",
+                    "Note causal strength (direct vs. inferred, with literature confidence 0–100%), and key uncertainties/gaps in modulation safety."
+                    ]
+                },
+                "safety": {
+                    "focus": "Evaluate safety signals, risks of dysregulation causing other diseases, contraindications, and risk mitigation for biomarker modulations.",
+                    "must_do": [
+                    "Start with a 2–3 bullet Executive Summary of safety posture, including causation-linked risks.",
+                    "Provide a Safety Table: adverse event/disease risk, severity, incidence/probability (if known), population, source/study design (with causation confidence).",
+                    "List contraindications, interactions with other biomarkers, monitoring plans, and risk–benefit notes for topical formulations."
+                    ]
+                },
+                "efficacy": {
+                    "focus": "Assess biomarker modulation effectiveness for disease cure and performance as causative targets.",
+                    "must_do": [
+                    "Start with a 2–3 bullet Executive Summary of efficacy signals tied to causation.",
+                    "Report primary/secondary endpoints, effect sizes, precision (CI), clinical relevance thresholds, and links to causative roles.",
+                    "Discuss generalizability (population, setting), consistency across studies, and risks of unintended disease effects."
+                    ]
+                },
+                "general": {
+                    "focus": "Provide a balanced overview covering comparative points, efficacy, safety, mechanisms, and causation as relevant to skin product formulations.",
+                    "must_do": [
+                    "Start with a 2–3 bullet Executive Summary.",
+                    "Summarize the evidence base (causation confidence), then efficacy (cure potential), safety (disease risks), and mechanistic rationale.",
+                    "Close with practical recommendations for formulation ranking and key uncertainties in causation/risks."
+                    ]
+                }
+                }
+ 
     }
-    
+   
     rules = type_rules[analysis_type]
-
+ 
     formatting_instructions = (
-        "### Output Format (Markdown)\n"
+        f"### Output Format(Comparison Table) if {analysis_type} == 'comparison'\n"
+        "The table should be in JSON format. Note: Do not include any extra text, explanations, or formatting (e.g., no markdown code fences).\n"
+        "### Output Format (Markdown) for other types\n"
         "- **Executive Summary** (2–3 bullets, crisp, decision-oriented)\n"
         "- **Detailed Analysis** (evidence-based; cite concrete numbers if present)\n"
         "- **Clinical Implications** (who benefits, how to use, monitoring)\n"
@@ -1793,7 +1918,7 @@ def get_custom_system_prompt(analysis_type, options, insights, user_query):
         "\n"
         "If any requested field is missing in the insights, write **Not reported** rather than inventing values."
     )
-
+ 
     guardrails = (
         "### Grounding & Guardrails\n"
         "- Use only the **provided options** and **insights** for claims. Do **not** fabricate data.\n"
@@ -1802,12 +1927,13 @@ def get_custom_system_prompt(analysis_type, options, insights, user_query):
         "- If the user’s query asks for a specific thing, **answer that first** before extra detail.\n"
         "- Keep Executive Summary to **max 3 bullets**."
     )
-
+ 
     # Inject user context last so the model prioritizes it
     user_block = (
         f"### User Query\n{user_query.strip()}\n" if user_query else
         "### User Query\nNot provided.\n"
     )
+
     
     # Echo options/insights verbatim (stringify safely)
     import json
@@ -2622,6 +2748,136 @@ def get_dashboard_summary():
         app.logger.error(f"Error getting dashboard summary: {e}")
         return jsonify({'success': False, 'error': str(e)}), 500
 
+scroll = "2m"  # Scroll context time (2 minutes to keep scroll open)
+size = 10000  # Number of results per scroll
+
+@app.route("/api/biomarker/insights", methods=["GET", "POST"])
+def biomarker_insights():
+    """
+    GET query params:
+      /api/biomarker/insights?biomarkers=Filaggrin&biomarkers=IL-6&condition=Aging&case_insensitive=false
+    Also supports ?biomarker=... and comma-separated values.
+    """
+    try:
+        biomarkers = request.args.getlist("biomarkers")
+
+        # Fallback: ?biomarker=Filaggrin
+        if not biomarkers:
+            single = request.args.get("biomarker")
+            if single:
+                biomarkers = [single]
+
+        # Support comma-separated: ?biomarkers=Filaggrin,IL-6
+        if len(biomarkers) == 1 and biomarkers[0] and "," in biomarkers[0]:
+            biomarkers = [b.strip() for b in biomarkers[0].split(",") if b.strip()]
+
+        condition = request.args.get("condition")
+        ci_str = (request.args.get("case_insensitive", "false") or "").strip().lower()
+        case_insensitive = ci_str in ("true", "1", "yes", "y", "on")
+        
+        if biomarkers is None or (isinstance(biomarkers, list) and len(biomarkers) == 0):
+            return jsonify({"success": False, "error": "Field 'biomarkers' is required (string or non-empty list)."}), 400
+
+        # Normalize to list
+        if isinstance(biomarkers, str):
+            biomarkers = [biomarkers]
+
+        # --- Build alias map, expand query with aliases
+        ALIAS2CANON = build_alias_lookup(biomarker_name_map)
+        biomarkers_for_query = standardize_Biomarker_list(biomarkers, biomarker_name_map, ALIAS2CANON)
+
+        # --- ES fetch
+        df_raw = elastic_search(
+            ES_INDEX,
+            scroll,
+            size,
+            biomarkers_for_query,
+            condition=condition,
+            case_insensitive=case_insensitive,
+            source_includes=None
+        )
+
+        # If no hits, return structured empty output
+        if df_raw is None or df_raw.empty:
+            biomarker_label = ", ".join(sorted(set(biomarkers))) if biomarkers else "N/A"
+            empty_json = {
+                "Causality": "Data for Causality for Biomarker is not given",
+                "Suggestive": "Data for Suggestive for Biomarker is not given",
+                "Correlative": f"Biomarker {biomarker_label} is in correlation with condition {condition}" if condition else ""
+            }
+            return jsonify({"success": True, "biomarkers": biomarkers, "condition": condition, "summary": empty_json, "count": 0})
+
+        # --- Canonicalize biomarker names in DF
+        df = standardize_df_column(df_raw, "Biomarker Name", ALIAS2CANON, in_place=True)
+
+        # --- Required columns
+        col_bio = "Biomarker Name"
+        col_cls = "Classification (Cause/Correlation)"
+        col_ins = "Key Insight_ECS"
+
+        missing_cols = [c for c in [col_bio, col_cls, col_ins] if c not in df.columns]
+        if missing_cols:
+            return jsonify({
+                "success": False,
+                "error": f"Missing expected columns in ES data: {missing_cols}"
+            }), 500
+
+        # --- Build records for the LLM
+        records = []
+        for _, row in df.iterrows():
+            key_insight = row[col_ins]
+            if pd.isna(key_insight) or str(key_insight).strip() == "":
+                continue
+            records.append({
+                "biomarker": None if pd.isna(row[col_bio]) else str(row[col_bio]),
+                "Classification": "" if pd.isna(row[col_cls]) else str(row[col_cls]),
+                "Key Insights": str(key_insight),
+                "condition": condition
+            })
+
+        if not records:
+            biomarker_label = ", ".join(sorted(set(biomarkers))) if biomarkers else "N/A"
+            empty_json = {
+                "Causality": "Data for Causality for Biomarker is not given",
+                "Suggestive": "Data for Suggestive for Biomarker is not given",
+                "Correlative": f"Biomarker {biomarker_label} is in correlation with condition {condition}" if condition else ""
+            }
+            return jsonify({"success": True, "biomarkers": biomarkers, "condition": condition, "summary": empty_json, "count": 0})
+
+        # --- Compute label used in fallback messages, if ever needed
+        unique_biomarkers = sorted({r["biomarker"] for r in records if r.get("biomarker")})
+        biomarker_label = ", ".join(unique_biomarkers) if unique_biomarkers else "N/A"
+
+        # --- Call LLM
+        rec_json = json.dumps(records, ensure_ascii=False)
+        llm_text = openai_response(rec_json, condition or "", biomarker_label)
+
+        # Parse JSON response from LLM safely
+        try:
+            llm_json = json.loads(llm_text)
+        except json.JSONDecodeError:
+            # Return raw if model didn't strictly follow JSON (rare with your system prompt)
+            return jsonify({
+                "success": True,
+                "biomarkers": biomarkers,
+                "condition": condition,
+                "summary_raw": llm_text,
+                "count": len(records),
+                "warning": "Model response was not valid JSON. See 'summary_raw'."
+            })
+
+        return jsonify({
+            "success": True,
+            "biomarkers": biomarkers,
+            "condition": condition,
+            "count": len(records),
+            "summary": llm_json
+        })
+
+    except Exception as e:
+        # Log e in real app
+        return jsonify({"success": False, "error": str(e)}), 500
+
 # Add these helper functions to your app.py
 
 def generate_mock_level_change_data(biomarker_name, condition):
@@ -2771,7 +3027,6 @@ def not_found(error):
 @app.errorhandler(500)
 def internal_error(error):
     return jsonify({'success': False, 'error': 'Internal server error'}), 500
-
 
 
 
